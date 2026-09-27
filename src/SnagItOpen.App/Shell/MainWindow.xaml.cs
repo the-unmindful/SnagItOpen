@@ -60,6 +60,7 @@ public partial class MainWindow : Window
     private readonly CaptureCoordinator _capture;
     private readonly Dictionary<ToolKind, RadioButton> _toolButtons = [];
     private readonly AnnotationPropertiesPanel _props;
+    private readonly ImageEdgePanel _edges;
     private bool _syncing, _exiting, _trayHintShown, _propsPending;
     private Point _listDragStart;
     private ImageListItemViewModel? _listDragItem;
@@ -81,6 +82,8 @@ public partial class MainWindow : Window
         _props = new AnnotationPropertiesPanel(services, vm, () => Canvas.Tool, k => _services.ToolStyles.Get(k.ToString(), DefaultStyle(k)));
         AnnotationPanelHost.Content = _props;
         ObjectsHost.Content = new ObjectsList(vm);
+        _edges = new ImageEdgePanel(services, vm);
+        EdgePanelHost.Content = _edges;
         // Changes made while a panel field had focus (e.g. undo) show once focus leaves the panel.
         _props.IsKeyboardFocusWithinChanged += (_, e) => { if (e.NewValue is false) RefreshPropsSoon(); };
         Canvas.SnapEnabled = _services.Settings.SnapEnabled;
@@ -333,6 +336,7 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(() =>
         {
             _propsPending = false;
+            if (!_edges.IsKeyboardFocusWithin) _edges.Refresh();
             if (_props.IsKeyboardFocusWithin) return;
             _props.Refresh();
         }, System.Windows.Threading.DispatcherPriority.Background);
@@ -463,23 +467,7 @@ public partial class MainWindow : Window
 
     // ================================================================== edges
 
-    private void OnApplyEdge(object sender, RoutedEventArgs e)
-    {
-        if (!int.TryParse(EdgeBorder.Text, out var bw) || !int.TryParse(EdgeShadow.Text, out var sh) || !int.TryParse(EdgeRadius.Text, out var cr)
-            || bw is < 0 or > 100 || sh is < 0 or > 100 || cr is < 0 or > 500)
-        {
-            _vm.Status = "Border and shadow must be 0–100 px, corner radius 0–500 px.";
-            return;
-        }
-        _vm.SetEdge(new EdgeStyle
-        {
-            BorderWidth = bw, ShadowSize = sh, CornerRadius = cr,
-            TornSides = EdgeTorn.IsChecked == true ? TornSides.Bottom : TornSides.None,
-            TornSeed = Random.Shared.Next(1, 1_000_000),
-        });
-    }
-
-    private void OnRemoveEdge(object sender, RoutedEventArgs e) => _vm.SetEdge(null);
+    // Image edges (border, shadow, corners, torn) are edited live in ImageEdgePanel.
 
     // ================================================================== keyboard
 

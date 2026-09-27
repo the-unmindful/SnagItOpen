@@ -305,8 +305,10 @@ public static class ColorPicker
                 if (!_g.IsKeyboardFocused) _g.Text = _none ? "" : c.G.ToString(CultureInfo.InvariantCulture);
                 if (!_b.IsKeyboardFocused) _b.Text = _none ? "" : c.B.ToString(CultureInfo.InvariantCulture);
                 var after = Chip(Value, 16);
+                var inner = after.Child;
+                after.Child = null; // detach from the temporary chip before re-parenting
                 _after.Background = after.Background;
-                _after.Child = after.Child;
+                _after.Child = inner;
             }
             finally { _updating = false; }
             if (raise) Changed?.Invoke(Value);

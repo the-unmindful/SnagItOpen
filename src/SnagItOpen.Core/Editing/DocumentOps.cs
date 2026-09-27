@@ -475,6 +475,10 @@ public static class DocumentOps
         return SetEffects(doc, id, [.. l.Effects, effect with { Region = region }]);
     }
 
+    /// <summary>Changes each selected image's edge style (a missing style starts from defaults). Empty styles are removed.</summary>
+    public static DocumentState UpdateEdges(DocumentState doc, IReadOnlyCollection<Guid> ids, Func<EdgeStyle, EdgeStyle> f) =>
+        Reflow(ReplaceImages(doc, i => f(i.Edge ?? new EdgeStyle()) is var e && e.IsEmpty ? i with { Edge = null } : i with { Edge = e }, ids));
+
     public static DocumentState SetEdge(DocumentState doc, IReadOnlyCollection<Guid> ids, EdgeStyle? edge) =>
         Reflow(ReplaceImages(doc, i => i with { Edge = edge is { IsEmpty: true } ? null : edge }, ids));
 

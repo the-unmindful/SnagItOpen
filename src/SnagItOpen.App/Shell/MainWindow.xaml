@@ -311,22 +311,7 @@
                             <Button Content="Flip V" Click="OnFlipV" Margin="0,4,4,0" Padding="6,2" />
                         </WrapPanel>
 
-                        <TextBlock Text="Edges" Style="{StaticResource SectionHeader}" />
-                        <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
-                            <Label Content="Border" Padding="0,4,8,0" Target="{Binding ElementName=EdgeBorder}" />
-                            <TextBox x:Name="EdgeBorder" Grid.Column="1" Text="0" />
-                            <Label Grid.Row="1" Content="Shadow" Padding="0,4,8,0" Target="{Binding ElementName=EdgeShadow}" />
-                            <TextBox x:Name="EdgeShadow" Grid.Row="1" Grid.Column="1" Text="0" />
-                            <Label Grid.Row="2" Content="Corner radius" Padding="0,4,8,0" Target="{Binding ElementName=EdgeRadius}" />
-                            <TextBox x:Name="EdgeRadius" Grid.Row="2" Grid.Column="1" Text="0" />
-                        </Grid>
-                        <CheckBox x:Name="EdgeTorn" Content="Torn bottom edge" />
-                        <WrapPanel>
-                            <Button Content="Apply edges" Click="OnApplyEdge" Margin="0,4,4,0" Padding="6,2" />
-                            <Button Content="Remove edges" Click="OnRemoveEdge" Margin="0,4,4,0" Padding="6,2" />
-                        </WrapPanel>
+                        <ContentControl x:Name="EdgePanelHost" Focusable="False" />
                     </StackPanel>
 
                     <ContentControl x:Name="AnnotationPanelHost" Focusable="False" />
