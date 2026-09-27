@@ -1,6 +1,6 @@
 # SnagItOpen hand-off
 
-Read this first in any new session. Last updated 2026-09-27, at commit `add8f6e` (branch `master`, local only, nothing pushed).
+Read this first in any new session. Last updated 2026-09-27. Local branch `master` tracks `origin/main` on https://github.com/the-unmindful/SnagItOpen (pushed at merge `c410a1a`).
 
 ## 1. What this is
 
@@ -24,7 +24,7 @@ A local, offline Windows screenshot capture and image editor, similar to Snagit.
 - **Smoke runs must use a temp data folder:** set `$env:SNAGITOPEN_DATA` to a folder under `E:\Misc\test\opencode-trial\temp\opencode`, so real user data is never touched.
 - **Don't run a build/test in the same parallel batch as the file edit it should check.** It can run before the edit lands and report a stale pass. This happened several times in the first session.
 - **Read a file before editing it**, and after a batch of edits check `git diff --stat` to confirm each edit actually landed.
-- **Commits:** small, one per feature step, message style `Area: what changed`. Commit locally. Do not push unless the user asks. There is no remote configured.
+- **Commits:** small, one per feature step, message style `Area: what changed`. Commit locally. Do not push unless the user asks. Remote `origin` is https://github.com/the-unmindful/SnagItOpen; local `master` pushes to remote `main` (`git push origin master:main`). The repo is MIT licensed (`LICENSE`, from GitHub's initial commit).
 - **Reinstall after changes the user wants to try:** `.\scripts\install.ps1` (options: `-StartWithWindows`, `-DesktopShortcut`, `-NoLaunch`). It installs to `%LOCALAPPDATA%\Programs\SnagItOpen` and needs no admin rights. Quit the running tray copy first.
 - `LF will be replaced by CRLF` warnings from git are harmless.
 
