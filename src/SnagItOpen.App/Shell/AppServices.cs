@@ -41,6 +41,9 @@ public sealed class AppServices : IDisposable
         if (LayoutPresets.LastWarning is { } lw) StartupWarnings.Add(lw);
         ToolStyles = new ToolStyleStore(paths.ToolStyles);
         ToolStyles.Load();
+        AnnotationStyles = new AnnotationStyleStore(paths.AnnotationStyles);
+        AnnotationStyles.Load();
+        if (AnnotationStyles.LastWarning is { } aw) StartupWarnings.Add(aw);
         CapturePresets = new CapturePresetStore(paths.CapturePresets);
         CapturePresets.Load();
         if (CapturePresets.LastWarning is { } cw) StartupWarnings.Add(cw);
@@ -72,6 +75,7 @@ public sealed class AppServices : IDisposable
     public AppSettings Settings { get; set; }
     public LayoutPresetStore LayoutPresets { get; }
     public ToolStyleStore ToolStyles { get; }
+    public AnnotationStyleStore AnnotationStyles { get; }
     public CapturePresetStore CapturePresets { get; }
     public LastRegionStore LastRegion { get; }
     public CaptureHistoryStore History { get; }

@@ -474,6 +474,106 @@ public sealed class EditorViewModel : ObservableObject
         if (_selectedAnnotations.Count > 0) Commit(label, d => DocumentOps.UpdateAnnotations(d, _selectedAnnotations, f));
     }
 
+    // ------------------------------------------------------------------ annotation commands (phases 4–5)
+
+    /// <summary>Annotations clipboard (private, in-process). Ctrl+Shift+C still copies the flattened image.</summary>
+    private Annotation[] _annClipboard = [];
+    private Annotation? _styleClipboard;
+    private int _pasteCount;
+
+    public bool HasAnnotationClipboard => _annClipboard.Length > 0;
+    public bool HasStyleClipboard => _styleClipboard is not null;
+
+    public IReadOnlyList<Annotation> SelectedAnnotationObjects =>
+        Document.Annotations.Where(a => _selectedAnnotations.Contains(a.Id)).ToList();
+
+    public void RenumberStepsFromSelected()
+    {
+        var first = Document.Annotations.FirstOrDefault(a => a is StepAnnotation && _selectedAnnotations.Contains(a.Id));
+        if (first is null) { RenumberSteps(); return; }
+        Commit("Renumber steps", d => DocumentOps.RenumberStepsFrom(d, first.Id));
+    }
+
+    public void AdjustStepNumbers(int delta)
+    {
+        if (!SelectedAnnotationObjects.OfType<StepAnnotation>().Any()) return;
+        Commit(delta > 0 ? "Increase step" : "Decrease step", d => DocumentOps.AdjustStepNumbers(d, _selectedAnnotations, delta));
+    }
+
+    public void Align(AlignMode mode)
+    {
+        if (_selectedAnnotations.Count < 2) { Status = "Select two or more annotations to align."; return; }
+        Commit("Align", d => DocumentOps.AlignAnnotations(d, _selectedAnnotations, mode));
+    }
+
+    public void Distribute(bool horizontal)
+    {
+        if (_selectedAnnotations.Count < 3) { Status = "Select three or more annotations to distribute."; return; }
+        Commit("Distribute", d => DocumentOps.DistributeAnnotations(d, _selectedAnnotations, horizontal));
+    }
+
+    public void CopyAnnotations()
+    {
+        var sel = SelectedAnnotationObjects;
+        if (sel.Count == 0) return;
+        _annClipboard = sel.ToArray();
+        _pasteCount = 0;
+        Status = sel.Count == 1 ? "Copied 1 annotation." : $"Copied {sel.Count} annotations.";
+    }
+
+    public void CutAnnotations()
+    {
+        CopyAnnotations();
+        if (_annClipboard.Length > 0) Commit("Cut", d => DocumentOps.RemoveAnnotations(d, _selectedAnnotations.ToArray()));
+    }
+
+    public bool PasteAnnotations()
+    {
+        if (_annClipboard.Length == 0) return false;
+        double off = 16 * ++_pasteCount;
+        Guid[] ids = [];
+        if (Commit(_annClipboard.Length == 1 ? "Paste annotation" : $"Paste {_annClipboard.Length} annotations",
+                d => { var (nd, n) = DocumentOps.PasteAnnotations(d, _annClipboard, off, off); ids = n; return nd; }))
+            Select([], ids);
+        return true;
+    }
+
+    public void DuplicateAnnotations()
+    {
+        if (_selectedAnnotations.Count == 0) return;
+        Guid[] ids = [];
+        if (Commit("Duplicate", d => { var (nd, n) = DocumentOps.DuplicateAnnotations(d, _selectedAnnotations); ids = n; return nd; }))
+            Select([], ids);
+    }
+
+    public void CopyStyle()
+    {
+        if (PrimaryAnnotation is { } a) { _styleClipboard = a; Status = $"Copied {a.Kind.ToLowerInvariant()} style."; }
+    }
+
+    public void PasteStyle()
+    {
+        if (_styleClipboard is not { } s || _selectedAnnotations.Count == 0) return;
+        UpdateSelectedAnnotations(a => AnnotationStyle.Transfer(s, a), "Paste style");
+    }
+
+    public void SetLocked(bool locked)
+    {
+        if (_selectedAnnotations.Count == 0) return;
+        UpdateSelectedAnnotations(a => a with { Locked = locked }, locked ? "Lock" : "Unlock");
+    }
+
+    /// <summary>Tab / Shift+Tab: select the next / previous annotation in drawing order.</summary>
+    public void CycleAnnotation(bool forward)
+    {
+        var anns = Document.Annotations;
+        if (anns.Length == 0) return;
+        int cur = _selectedAnnotations.Count == 1 ? Array.FindIndex(anns, a => a.Id == _selectedAnnotations.First()) : -1;
+        int next = cur < 0 ? (forward ? 0 : anns.Length - 1) : (cur + (forward ? 1 : -1) + anns.Length) % anns.Length;
+        Select([], [anns[next].Id]);
+        Status = $"{anns[next].Kind} ({next + 1} of {anns.Length})";
+    }
+
     public void AddEffect(Guid layerId, ImageEffect effect) => Commit(effect.Kind == ImageEffectKind.Blur ? "Blur" : "Pixelate", d => DocumentOps.AddEffect(d, layerId, effect));
 
     public void ClearEffects() { if (SelectedLayer is { } l && l.Effects.Length > 0) Commit("Remove effects", d => DocumentOps.SetEffects(d, l.Id, [])); }

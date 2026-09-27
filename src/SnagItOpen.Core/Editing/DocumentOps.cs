@@ -377,6 +377,62 @@ public static class DocumentOps
     public static int NextStepNumber(DocumentState doc) =>
         doc.Annotations.OfType<StepAnnotation>().Select(s => s.Number).DefaultIfEmpty(0).Max() + 1;
 
+    /// <summary>
+    /// Renumbers steps in drawing order starting at the given step: it keeps <paramref name="start"/>
+    /// (or its own number) and every later step counts up from there. Earlier steps are unchanged.
+    /// </summary>
+    public static DocumentState RenumberStepsFrom(DocumentState doc, Guid fromId, int? start = null)
+    {
+        int idx = Array.FindIndex(doc.Annotations, a => a.Id == fromId && a is StepAnnotation);
+        if (idx < 0) return doc;
+        int n = Math.Clamp(start ?? ((StepAnnotation)doc.Annotations[idx]).Number, 0, 9999);
+        var arr = doc.Annotations.ToArray();
+        for (int i = idx; i < arr.Length; i++)
+            if (arr[i] is StepAnnotation s) arr[i] = s with { Number = Math.Min(9999, n++) };
+        return doc with { Annotations = arr };
+    }
+
+    /// <summary>Adds <paramref name="delta"/> to the numbers of the given steps (clamped 0–9999).</summary>
+    public static DocumentState AdjustStepNumbers(DocumentState doc, IReadOnlyCollection<Guid> ids, int delta) =>
+        doc with
+        {
+            Annotations = doc.Annotations.Select(a => a is StepAnnotation s && ids.Contains(s.Id)
+                ? s with { Number = Math.Clamp(s.Number + delta, 0, 9999) } : a).ToArray(),
+        };
+
+    /// <summary>Aligns selected (unlocked) annotations to the union of their extents.</summary>
+    public static DocumentState AlignAnnotations(DocumentState doc, IReadOnlyCollection<Guid> ids, AlignMode mode) =>
+        ApplyOffsets(doc, AnnotationGeometry.Align(Boxes(doc, ids), mode));
+
+    /// <summary>Spaces three or more selected annotations evenly (first and last stay put).</summary>
+    public static DocumentState DistributeAnnotations(DocumentState doc, IReadOnlyCollection<Guid> ids, bool horizontal) =>
+        ApplyOffsets(doc, AnnotationGeometry.Distribute(Boxes(doc, ids), horizontal));
+
+    private static List<(Guid, RectD)> Boxes(DocumentState doc, IReadOnlyCollection<Guid> ids) =>
+        doc.Annotations.Where(a => ids.Contains(a.Id) && !a.Locked).Select(a => (a.Id, a.Extent())).ToList();
+
+    private static DocumentState ApplyOffsets(DocumentState doc, IReadOnlyList<(Guid Id, double Dx, double Dy)> moves)
+    {
+        if (moves.Count == 0) return doc;
+        var map = moves.ToDictionary(m => m.Id);
+        return Reflow(doc with
+        {
+            Annotations = doc.Annotations.Select(a => map.TryGetValue(a.Id, out var m) && (Math.Abs(m.Dx) > 1e-9 || Math.Abs(m.Dy) > 1e-9)
+                ? a.Offset(m.Dx, m.Dy) : a).ToArray(),
+        });
+    }
+
+    /// <summary>Pastes copies of annotations (new IDs, offset). Returns the new IDs.</summary>
+    public static (DocumentState Doc, Guid[] NewIds) PasteAnnotations(DocumentState doc, IReadOnlyList<Annotation> items, double dx, double dy)
+    {
+        var copies = items.Where(a => a is not null)
+            .Select(a => a.Offset(dx, dy) with { Id = Guid.NewGuid(), ImageLayerId = null, Locked = false })
+            // Pasted stamps that reference an asset this document lacks become plain symbol stamps.
+            .Select(a => a is StampAnnotation { AssetId: { } sid } st && doc.FindAsset(sid) is null ? st with { AssetId = null } : a)
+            .ToArray();
+        return (Reflow(doc with { Annotations = [.. doc.Annotations, .. copies] }), copies.Select(c => c.Id).ToArray());
+    }
+
     // ---------------------------------------------------------------- effects / edges
 
     public static DocumentState SetEffects(DocumentState doc, Guid id, ImageEffect[] effects) =>
