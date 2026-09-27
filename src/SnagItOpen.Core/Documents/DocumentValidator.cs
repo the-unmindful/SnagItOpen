@@ -78,8 +78,20 @@ public static class DocumentValidator
             if (a.ImageLayerId is { } lid && !imageIds.Contains(lid)) errors.Add($"Annotation {a.Id} references unknown image.");
             if (!IsFinite(a.Bounds)) errors.Add($"Annotation {a.Id} has non-finite geometry.");
             if (!double.IsFinite(a.StrokeWidth) || a.StrokeWidth < 0 || a.StrokeWidth > 200) errors.Add($"Annotation {a.Id} stroke width invalid.");
+            if (!double.IsFinite(a.Rotation) || Math.Abs(a.Rotation) > 3600) errors.Add($"Annotation {a.Id} rotation invalid.");
+            if (!double.IsFinite(a.Alpha) || a.Alpha is < 0 or > 1) errors.Add($"Annotation {a.Id} opacity must be 0–1.");
             switch (a)
             {
+                case LineAnnotation ln when !IsFinite(ln.Start) || !IsFinite(ln.End) || (ln.Control is { } cp && !IsFinite(cp))
+                                         || !double.IsFinite(ln.HeadSize) || ln.HeadSize is < 0.25 or > 8
+                                         || !Enum.IsDefined(ln.StartCap) || !Enum.IsDefined(ln.EndCap) || !Enum.IsDefined(ln.Dash):
+                    errors.Add($"Line {a.Id} geometry or style invalid."); break;
+                case CalloutAnnotation co when !IsFinite(co.Tail) || !double.IsFinite(co.TailWidth) || co.TailWidth is < 2 or > 500 || !Enum.IsDefined(co.Shape):
+                    errors.Add($"Callout {a.Id} tail or shape invalid."); break;
+                case StepAnnotation sp when (sp.Tail is { } stt && !IsFinite(stt)) || !Enum.IsDefined(sp.Shape) || !Enum.IsDefined(sp.LabelStyle)
+                                         || (sp.Prefix?.Length ?? 0) > StepLabels.MaxAffix || (sp.Suffix?.Length ?? 0) > StepLabels.MaxAffix
+                                         || (sp.CustomText?.Length ?? 0) > StepLabels.MaxCustom:
+                    errors.Add($"Step {a.Id} style invalid."); break;
                 case FreehandAnnotation f when f.Points.Length > FreehandAnnotation.MaxPoints:
                     errors.Add($"Freehand {a.Id} has too many points."); break;
                 case StampAnnotation s when s.AssetId is { } sid && !assets.ContainsKey(sid):
@@ -104,6 +116,8 @@ public static class DocumentValidator
     private static bool Overflows(PixelRect r) =>
         (long)r.X + r.Width > int.MaxValue || (long)r.Y + r.Height > int.MaxValue ||
         (long)r.X + r.Width < int.MinValue || (long)r.Y + r.Height < int.MinValue;
+
+    private static bool IsFinite(PointD p) => double.IsFinite(p.X) && double.IsFinite(p.Y);
 
     private static bool IsFinite(RectD r) =>
         double.IsFinite(r.X) && double.IsFinite(r.Y) && double.IsFinite(r.Width) && double.IsFinite(r.Height);

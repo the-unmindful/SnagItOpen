@@ -105,7 +105,8 @@ public sealed record ImageLayer
 /// <summary>The complete editable state of a composition. Treat arrays as immutable.</summary>
 public sealed record DocumentState
 {
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>2: annotations are canvas objects with rotation, opacity, caps, curves, step/callout styles.</summary>
+    public const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public Guid Id { get; init; } = Guid.NewGuid();

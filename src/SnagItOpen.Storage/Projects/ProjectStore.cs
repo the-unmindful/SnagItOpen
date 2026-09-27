@@ -194,6 +194,8 @@ public sealed class ProjectStore : IProjectStore
     {
         var n = d with
         {
+            // Older schemas load into the current model; saving writes the current version.
+            SchemaVersion = Math.Max(d.SchemaVersion, 1) <= DocumentState.CurrentSchemaVersion ? DocumentState.CurrentSchemaVersion : d.SchemaVersion,
             Assets = d.Assets ?? [],
             Images = (d.Images ?? []).Select(i => i is null ? i! : i with { Effects = i.Effects ?? [] }).ToArray(),
             LayoutOrder = d.LayoutOrder ?? [],
