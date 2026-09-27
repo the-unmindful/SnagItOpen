@@ -296,27 +296,8 @@
                         </WrapPanel>
                     </StackPanel>
 
-                    <TextBlock x:Name="ToolHeader" Text="Tool style" Style="{StaticResource SectionHeader}" />
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
-                        <Label Content="Color" Padding="0,4,8,0" Target="{Binding ElementName=StyleColor}" />
-                        <TextBox x:Name="StyleColor" Grid.Column="1" LostFocus="OnStyleChanged" ToolTip="#RRGGBB or #RRGGBBAA" />
-                        <Label Grid.Row="1" Content="Fill" Padding="0,4,8,0" Target="{Binding ElementName=StyleFill}" />
-                        <TextBox x:Name="StyleFill" Grid.Row="1" Grid.Column="1" LostFocus="OnStyleChanged" ToolTip="Empty = no fill" />
-                        <Label Grid.Row="2" Content="Stroke" Padding="0,4,8,0" Target="{Binding ElementName=StyleStroke}" />
-                        <TextBox x:Name="StyleStroke" Grid.Row="2" Grid.Column="1" LostFocus="OnStyleChanged" />
-                        <Label Grid.Row="3" Content="Font size" Padding="0,4,8,0" Target="{Binding ElementName=StyleFont}" />
-                        <TextBox x:Name="StyleFont" Grid.Row="3" Grid.Column="1" LostFocus="OnStyleChanged" />
-                        <Label Grid.Row="4" Content="Strength / zoom" Padding="0,4,8,0" Target="{Binding ElementName=StyleStrength}" ToolTip="Blur radius, pixel block size, or magnifier zoom" />
-                        <TextBox x:Name="StyleStrength" Grid.Row="4" Grid.Column="1" LostFocus="OnStyleChanged" />
-                        <Label Grid.Row="5" Content="Symbol" Padding="0,4,8,0" Target="{Binding ElementName=StyleSymbol}" />
-                        <ComboBox x:Name="StyleSymbol" Grid.Row="5" Grid.Column="1" Margin="0,2" SelectionChanged="OnStyleChanged" />
-                    </Grid>
-                    <CheckBox x:Name="StyleBold" Content="Bold text" Click="OnStyleChanged" />
-                    <CheckBox x:Name="StyleDashed" Content="Dashed line" Click="OnStyleChanged" />
+                    <ContentControl x:Name="AnnotationPanelHost" Focusable="False" />
                     <CheckBox x:Name="SnapBox" Content="Snap while moving (hold Alt to disable)" IsChecked="True" Click="OnSnapChanged" />
-                    <Button Content="Apply style to selected annotations" Click="OnApplyStyle" Margin="0,4,0,0" Padding="6,2" HorizontalAlignment="Left" />
                     <TextBlock TextWrapping="Wrap" Opacity="0.7" Margin="0,8,0,0" FontSize="11"
                                Text="Redaction is a solid, fully opaque fill in exported images. Blur and pixelate are visual effects, not secure redaction. Saved projects keep original pixels." />
                 </StackPanel>

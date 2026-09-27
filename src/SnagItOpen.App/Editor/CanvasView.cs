@@ -96,6 +96,12 @@ public sealed class CanvasView : FrameworkElement
     /// <summary>Current style for newly drawn annotations (provided by the tool panel).</summary>
     public Func<ToolKind, ToolStyle>? StyleProvider { get; set; }
 
+    /// <summary>Per-tool annotation prototype (look of newly drawn items), edited in the properties panel.</summary>
+    public Func<ToolKind, Annotation>? PrototypeProvider { get; set; }
+
+    private T Proto<T>(ToolKind k) where T : Annotation, new() =>
+        PrototypeProvider?.Invoke(k) is T p ? AnnotationStyle.Instantiate(p) : new T();
+
     public bool SnapEnabled { get; set; } = true;
 
     /// <summary>Raised when a text/callout annotation needs its text edited.</summary>
@@ -771,23 +777,23 @@ public sealed class CanvasView : FrameworkElement
             if (tiny) { vm.Status = "Drag over the detail you want to magnify."; return; }
             double z = Math.Clamp(st.Zoom, 1.25, 8);
             var dest = new RectD(drRect.Right + 16, drRect.Y, drRect.Width * z, drRect.Height * z);
-            vm.AddAnnotation(new MagnifierAnnotation { SourceRegion = drRect, Bounds = dest, Color = st.Color, StrokeWidth = Math.Max(1, st.StrokeWidth), Circular = st.Symbol != "square" });
+            vm.AddAnnotation(Proto<MagnifierAnnotation>(Tool) with { SourceRegion = drRect, Bounds = dest });
             return;
         }
         if (tiny) return;
 
         // Annotations are canvas objects in document pixels; redactions cover exactly what was dragged.
-        double stroke = st.StrokeWidth;
         var a0 = _downDoc; var a1 = _curDoc;
         var b = RectD.FromPoints(a0, a1);
+        // New items take the tool's prototype look (edited in the properties panel).
         Annotation? ann = Tool switch
         {
-            ToolKind.Rectangle => new RectangleAnnotation { Bounds = b, Color = st.Color, Fill = st.Fill, StrokeWidth = stroke },
-            ToolKind.Ellipse => new EllipseAnnotation { Bounds = b, Color = st.Color, Fill = st.Fill, StrokeWidth = stroke },
-            ToolKind.Arrow => new ArrowAnnotation { Start = a0, End = a1, Bounds = b, Color = st.Color, StrokeWidth = stroke, Dashed = st.Dashed },
-            ToolKind.Line => new LineAnnotation { Start = a0, End = a1, Bounds = b, Color = st.Color, StrokeWidth = stroke, Dashed = st.Dashed },
-            ToolKind.Highlight => new HighlightAnnotation { Bounds = b, Color = st.Color },
-            ToolKind.Redaction => new RedactionAnnotation { Bounds = b, Color = st.Color with { A = 255 } },
+            ToolKind.Rectangle => Proto<RectangleAnnotation>(Tool) with { Bounds = b },
+            ToolKind.Ellipse => Proto<EllipseAnnotation>(Tool) with { Bounds = b },
+            ToolKind.Arrow => Proto<ArrowAnnotation>(Tool) with { Start = a0, End = a1, Bounds = b, Control = null },
+            ToolKind.Line => Proto<LineAnnotation>(Tool) with { Start = a0, End = a1, Bounds = b, Control = null },
+            ToolKind.Highlight => Proto<HighlightAnnotation>(Tool) with { Bounds = b },
+            ToolKind.Redaction => Proto<RedactionAnnotation>(Tool) is var r ? r with { Bounds = b, Color = r.Color with { A = 255 } } : null,
             _ => null,
         };
         if (ann is null) return;
@@ -801,60 +807,41 @@ public sealed class CanvasView : FrameworkElement
         var pts = _freehand.ToList();
         _freehand.Clear();
         var simplified = CaptureMask.Simplify(pts, 0.75, FreehandAnnotation.MaxPoints);
-        var st = ToolStyleFor(ToolKind.Freehand);
-        vm.AddAnnotation(new FreehandAnnotation
-        {
-            Points = simplified, Bounds = FreehandAnnotation.BoundsOf(simplified), Color = st.Color,
-            StrokeWidth = st.StrokeWidth,
-        });
+        vm.AddAnnotation(Proto<FreehandAnnotation>(ToolKind.Freehand) with { Points = simplified, Bounds = FreehandAnnotation.BoundsOf(simplified) });
     }
 
     private void PlaceClickAnnotation(DocumentState doc)
     {
         var vm = _vm!;
-        var st = ToolStyleFor(Tool);
-        const double scale = 1;
         var p = _downDoc;
         switch (Tool)
         {
             case ToolKind.Step:
                 {
-                    double size = Math.Max(16, st.FontSize * 1.4) * scale;
-                    vm.AddAnnotation(new StepAnnotation
-                    {
-                        Bounds = new RectD(p.X - size / 2, p.Y - size / 2, size, size), Number = DocumentOps.NextStepNumber(doc),
-                        Color = st.Color, StrokeWidth = 0,
-                    });
+                    var proto = Proto<StepAnnotation>(Tool);
+                    double size = proto.Bounds.Width > 4 ? proto.Bounds.Width : 32;
+                    var step = proto with { Bounds = new RectD(p.X - size / 2, p.Y - size / 2, size, size), Number = DocumentOps.NextStepNumber(doc) };
+                    if (proto.Tail is not null) step = step with { Tail = new PointD(p.X + size * 1.5, p.Y + size) };
+                    vm.AddAnnotation(step);
                     break;
                 }
             case ToolKind.Stamp:
                 {
-                    double size = 64 * scale;
-                    vm.AddAnnotation(new StampAnnotation
-                    {
-                        Bounds = new RectD(p.X - size / 2, p.Y - size / 2, size, size), Symbol = st.Symbol ?? StampSymbols.Check,
-                        Color = st.Color, StrokeWidth = 0,
-                    });
+                    var proto = Proto<StampAnnotation>(Tool);
+                    double size = proto.Bounds.Width > 4 ? proto.Bounds.Width : 64;
+                    vm.AddAnnotation(proto with { Bounds = new RectD(p.X - size / 2, p.Y - size / 2, size, size), Symbol = proto.Symbol ?? StampSymbols.Check, AssetId = null });
                     break;
                 }
             case ToolKind.Text:
             case ToolKind.Callout:
                 {
-                    double fs = st.FontSize * scale;
+                    var proto = Tool == ToolKind.Callout ? Proto<CalloutAnnotation>(Tool) : Proto<TextAnnotation>(Tool);
+                    double fs = proto.FontSize;
                     var w = Math.Max(120, fs * 10);
-                    var box = new RectD(p.X, p.Y, w, fs * 1.6 + 2 * AnnotationRenderer.TextPadding);
-                    TextAnnotation t = Tool == ToolKind.Callout
-                        ? new CalloutAnnotation
-                        {
-                            Bounds = box with { Y = p.Y - box.Height - 40 * scale, X = p.X + 30 * scale }, Tail = p, Text = "",
-                            FontFamily = st.FontFamily, FontSize = fs, Bold = st.Bold, Color = st.Color,
-                            Fill = st.Fill ?? new Rgba32(255, 255, 255, 255), StrokeWidth = Math.Max(1, st.StrokeWidth * scale),
-                        }
-                        : new TextAnnotation
-                        {
-                            Bounds = box, Text = "", FontFamily = st.FontFamily, FontSize = fs, Bold = st.Bold,
-                            Color = st.Color, Fill = st.Fill, StrokeWidth = 0,
-                        };
+                    var box = new RectD(p.X, p.Y, w, fs * 1.6 + 2 * Math.Max(0, proto.Padding));
+                    TextAnnotation t = proto is CalloutAnnotation co
+                        ? co with { Bounds = box with { Y = p.Y - box.Height - 40, X = p.X + 30 }, Tail = p, Text = "" }
+                        : proto with { Bounds = box, Text = "" };
                     EditTextRequested?.Invoke(t, true);
                     break;
                 }

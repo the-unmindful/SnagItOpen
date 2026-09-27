@@ -58,8 +58,8 @@ public partial class MainWindow : Window
     private readonly EditorViewModel _vm;
     private readonly CaptureCoordinator _capture;
     private readonly Dictionary<ToolKind, RadioButton> _toolButtons = [];
-    private ToolKind _styleTool = ToolKind.Arrow;
-    private bool _loadingStyle, _syncing, _exiting, _trayHintShown;
+    private readonly AnnotationPropertiesPanel _props;
+    private bool _syncing, _exiting, _trayHintShown, _propsPending;
     private Point _listDragStart;
     private ImageListItemViewModel? _listDragItem;
     private GlobalHotkeyService? _hotkeys;
@@ -74,9 +74,13 @@ public partial class MainWindow : Window
         DataContext = vm;
 
         AlignBox.ItemsSource = Enum.GetValues<CrossAlignment>();
-        StyleSymbol.ItemsSource = StampSymbols.All.Append("square").ToArray();
         Canvas.ViewModel = vm;
         Canvas.StyleProvider = k => _services.ToolStyles.Get(k.ToString(), DefaultStyle(k));
+        Canvas.PrototypeProvider = k => _services.AnnotationStyles.Prototype(k.ToString());
+        _props = new AnnotationPropertiesPanel(services, vm, () => Canvas.Tool, k => _services.ToolStyles.Get(k.ToString(), DefaultStyle(k)));
+        AnnotationPanelHost.Content = _props;
+        // Changes made while a panel field had focus (e.g. undo) show once focus leaves the panel.
+        _props.IsKeyboardFocusWithinChanged += (_, e) => { if (e.NewValue is false) RefreshPropsSoon(); };
         Canvas.SnapEnabled = _services.Settings.SnapEnabled;
         SnapBox.IsChecked = _services.Settings.SnapEnabled;
         Canvas.ViewChanged += () => ZoomText.Text = $"{Canvas.Zoom:P0}";
@@ -88,7 +92,6 @@ public partial class MainWindow : Window
         GalleryMenu.IsChecked = _services.Settings.ShowCaptureGallery;
         SetGalleryVisible(_services.Settings.ShowCaptureGallery);
         SelectTool(ToolKind.Select);
-        LoadStyleBoxes(_styleTool);
 
         vm.ErrorRaised += msg => Dialogs.Error(this, msg);
         vm.PropertyChanged += OnVmPropertyChanged;
@@ -274,6 +277,8 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName is "" or null or nameof(EditorViewModel.SelectedImages))
             Dispatcher.BeginInvoke(SyncListSelection, System.Windows.Threading.DispatcherPriority.Background);
+        if (e.PropertyName is "" or null or nameof(EditorViewModel.SelectedAnnotations))
+            RefreshPropsSoon();
     }
 
     private void SyncListSelection()
@@ -307,12 +312,22 @@ public partial class MainWindow : Window
         Canvas.CancelGesture();
         Canvas.Tool = kind;
         if (_toolButtons.TryGetValue(kind, out var b)) b.IsChecked = true;
-        if (kind is not (ToolKind.Select or ToolKind.Crop or ToolKind.CutOut))
-        {
-            _styleTool = kind;
-            LoadStyleBoxes(kind);
-        }
+        if (kind != ToolKind.Select && _vm.SelectedAnnotations.Count > 0) _vm.Select(_vm.SelectedImages, []);
+        RefreshPropsSoon();
         _vm.Status = ToolDefs.First(t => t.Kind == kind).Tip;
+    }
+
+    /// <summary>Rebuilds the properties panel once per dispatcher cycle (never while a panel field has focus).</summary>
+    private void RefreshPropsSoon()
+    {
+        if (_propsPending) return;
+        _propsPending = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            _propsPending = false;
+            if (_props.IsKeyboardFocusWithin) return;
+            _props.Refresh();
+        }, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private static ToolStyle DefaultStyle(ToolKind k) => k switch
@@ -328,61 +343,6 @@ public partial class MainWindow : Window
         ToolKind.Step => new ToolStyle { Color = Rgba32.Red, FontSize = 20 },
         _ => new ToolStyle(),
     };
-
-    private ToolStyle CurrentStyle() => _services.ToolStyles.Get(_styleTool.ToString(), DefaultStyle(_styleTool));
-
-    private void LoadStyleBoxes(ToolKind kind)
-    {
-        _loadingStyle = true;
-        try
-        {
-            var st = _services.ToolStyles.Get(kind.ToString(), DefaultStyle(kind));
-            ToolHeader.Text = $"{ToolDefs.First(t => t.Kind == kind).Label} style";
-            StyleColor.Text = st.Color.ToHex();
-            StyleFill.Text = st.Fill?.ToHex() ?? "";
-            StyleStroke.Text = st.StrokeWidth.ToString("0.##");
-            StyleFont.Text = st.FontSize.ToString("0.##");
-            StyleStrength.Text = kind == ToolKind.Magnifier ? st.Zoom.ToString("0.##") : st.EffectStrength.ToString();
-            StyleSymbol.SelectedItem = st.Symbol ?? (kind == ToolKind.Stamp ? StampSymbols.Check : null);
-            StyleBold.IsChecked = st.Bold;
-            StyleDashed.IsChecked = st.Dashed;
-        }
-        finally { _loadingStyle = false; }
-    }
-
-    private void OnStyleChanged(object sender, RoutedEventArgs e)
-    {
-        if (_loadingStyle) return;
-        var st = CurrentStyle();
-        if (Rgba32.TryParse(StyleColor.Text, out var c)) st = st with { Color = c };
-        else { _vm.Status = "Color must be #RRGGBB or #RRGGBBAA."; }
-        if (string.IsNullOrWhiteSpace(StyleFill.Text)) st = st with { Fill = null };
-        else if (Rgba32.TryParse(StyleFill.Text, out var f)) st = st with { Fill = f };
-        if (double.TryParse(StyleStroke.Text, out var sw)) st = st with { StrokeWidth = sw };
-        if (double.TryParse(StyleFont.Text, out var fs)) st = st with { FontSize = fs };
-        if (_styleTool == ToolKind.Magnifier) { if (double.TryParse(StyleStrength.Text, out var z)) st = st with { Zoom = z }; }
-        else if (int.TryParse(StyleStrength.Text, out var s)) st = st with { EffectStrength = s };
-        st = st with { Symbol = StyleSymbol.SelectedItem as string, Bold = StyleBold.IsChecked == true, Dashed = StyleDashed.IsChecked == true };
-        _services.ToolStyles.Set(_styleTool.ToString(), st);
-        LoadStyleBoxes(_styleTool);
-    }
-
-    private void OnApplyStyle(object sender, RoutedEventArgs e)
-    {
-        if (_vm.SelectedAnnotations.Count == 0) { _vm.Status = "Select annotations first."; return; }
-        var st = CurrentStyle();
-        _vm.UpdateSelectedAnnotations(a => a switch
-        {
-            RedactionAnnotation r => r with { Color = st.Color with { A = 255 } },
-            HighlightAnnotation h => h with { Color = st.Color },
-            RectangleAnnotation r => r with { Color = st.Color, Fill = st.Fill, StrokeWidth = st.StrokeWidth },
-            EllipseAnnotation el => el with { Color = st.Color, Fill = st.Fill, StrokeWidth = st.StrokeWidth },
-            LineAnnotation l => l with { Color = st.Color, StrokeWidth = st.StrokeWidth, Dashed = st.Dashed },
-            TextAnnotation t => t with { Color = st.Color, Fill = st.Fill ?? t.Fill, FontSize = st.FontSize, Bold = st.Bold },
-            StampAnnotation s => s with { Color = st.Color, Symbol = s.AssetId is null ? st.Symbol ?? s.Symbol : s.Symbol },
-            _ => a with { Color = st.Color, StrokeWidth = st.StrokeWidth },
-        }, "Apply style");
-    }
 
     private void OnSnapChanged(object sender, RoutedEventArgs e) => Canvas.SnapEnabled = SnapBox.IsChecked == true;
 
