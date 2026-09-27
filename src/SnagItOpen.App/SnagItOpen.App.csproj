@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>SnagItOpen.App</RootNamespace>
+    <AssemblyName>SnagItOpen</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>SnagItOpen.App.App</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SnagItOpen.Core\SnagItOpen.Core.csproj" />
+    <ProjectReference Include="..\SnagItOpen.Imaging\SnagItOpen.Imaging.csproj" />
+    <ProjectReference Include="..\SnagItOpen.Windows\SnagItOpen.Windows.csproj" />
+    <ProjectReference Include="..\SnagItOpen.Storage\SnagItOpen.Storage.csproj" />
+  </ItemGroup>
+
+</Project>

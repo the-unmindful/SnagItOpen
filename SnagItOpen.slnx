@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SnagItOpen.App/SnagItOpen.App.csproj" />
+    <Project Path="src/SnagItOpen.Core/SnagItOpen.Core.csproj" />
+    <Project Path="src/SnagItOpen.Imaging/SnagItOpen.Imaging.csproj" />
+    <Project Path="src/SnagItOpen.Storage/SnagItOpen.Storage.csproj" />
+    <Project Path="src/SnagItOpen.Windows/SnagItOpen.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SnagItOpen.Core.Tests/SnagItOpen.Core.Tests.csproj" />
+    <Project Path="tests/SnagItOpen.Windows.Tests/SnagItOpen.Windows.Tests.csproj" />
+  </Folder>
+</Solution>

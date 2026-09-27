@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>SnagItOpen.Windows</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Avoid ambiguous WPF/WinForms types; qualify WinForms usage explicitly. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SnagItOpen.Core\SnagItOpen.Core.csproj" />
+  </ItemGroup>
+
+</Project>
