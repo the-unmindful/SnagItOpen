@@ -73,7 +73,8 @@ public class AnnotationGeometryTests
     [Fact]
     public void Rotated_box_hit_test_uses_the_rotated_shape()
     {
-        var t = new RectangleAnnotation { Bounds = new RectD(0, 0, 100, 10), Rotation = 90, StrokeWidth = 0 };
+        // Filled, so the whole rotated interior is clickable (unfilled shapes are see-through).
+        var t = new RectangleAnnotation { Bounds = new RectD(0, 0, 100, 10), Rotation = 90, StrokeWidth = 0, Fill = Rgba32.White };
         // Rotated 90° about (50,5): now spans x 45..55, y -45..55.
         Assert.True(AnnotationGeometry.HitTest(t, new(50, 40), 0.5));
         Assert.False(AnnotationGeometry.HitTest(t, new(90, 5), 0.5));

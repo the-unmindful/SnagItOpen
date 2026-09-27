@@ -41,6 +41,10 @@ public abstract record Annotation
     public bool Shadow { get; init; }
     /// <summary>Locked items can be selected and styled but not moved or reshaped.</summary>
     public bool Locked { get; init; }
+    /// <summary>Hidden items are kept in the document but not drawn, exported or hit-tested.</summary>
+    public bool Hidden { get; init; }
+    /// <summary>Optional user label shown in the Objects list.</summary>
+    public string? Name { get; init; }
 
     /// <summary>Tool name shown in UI; also the key for remembered tool styles.</summary>
     [JsonIgnore] public abstract string Kind { get; }

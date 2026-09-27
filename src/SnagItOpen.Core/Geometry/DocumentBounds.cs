@@ -35,6 +35,7 @@ public static class DocumentBounds
         }
         foreach (var a in doc.Annotations)
         {
+            if (a.Hidden && a is not RedactionAnnotation) continue;
             var e = AnnotationExtent(doc, a);
             if (e.IsEmpty) continue;
             u = any ? u.Union(e) : e;

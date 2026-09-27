@@ -105,13 +105,56 @@ public static class AnnotationGeometry
             case StepAnnotation s:
                 if (s.Tail is { } t && DistanceToSegment(p, s.Bounds.Center, t) <= Math.Max(tolerance, s.Bounds.Width / 6)) return true;
                 return s.Shape == StepShape.Circle ? InEllipse(s, p, tolerance) : InBox(s, p, tolerance);
+            case EllipseAnnotation { Fill: null } e when !e.Locked:
+                return OnEllipseBorder(e, p, tolerance);
             case EllipseAnnotation e:
                 return InEllipse(e, p, tolerance);
+            case RectangleAnnotation { Fill: null } r when !r.Locked:
+                return OnBoxBorder(r, p, tolerance);
             case MagnifierAnnotation { Circular: true } m:
                 return InEllipse(m, p, tolerance);
             default:
                 return InBox(a, p, tolerance);
         }
+    }
+
+    /// <summary>True when <paramref name="p"/> is anywhere inside the item's (rotated) box, ignoring see-through interiors.</summary>
+    public static bool InsideBox(Annotation a, PointD p, double tolerance) => a switch
+    {
+        LineAnnotation or FreehandAnnotation => a.Extent().Inflate(tolerance).Contains(p),
+        _ => InBox(a, p, tolerance),
+    };
+
+    /// <summary>Topmost-first list of every annotation under <paramref name="p"/>.</summary>
+    public static IReadOnlyList<Annotation> HitStack(IReadOnlyList<Annotation> drawOrder, PointD p, double tolerance)
+    {
+        var list = new List<Annotation>();
+        for (int i = drawOrder.Count - 1; i >= 0; i--)
+            if (!drawOrder[i].Hidden && HitTest(drawOrder[i], p, tolerance)) list.Add(drawOrder[i]);
+        return list;
+    }
+
+    private static bool OnBoxBorder(Annotation a, PointD p, double tol)
+    {
+        var q = Local(a, p);
+        double band = tol + a.StrokeWidth / 2;
+        var outer = a.Bounds.Inflate(band);
+        if (!outer.Contains(q)) return false;
+        var inner = a.Bounds.Inflate(-band);
+        return inner.IsEmpty || !inner.Contains(q);
+    }
+
+    private static bool OnEllipseBorder(Annotation a, PointD p, double tol)
+    {
+        var q = Local(a, p);
+        double band = tol + a.StrokeWidth / 2;
+        var b = a.Bounds;
+        double rx = b.Width / 2, ry = b.Height / 2;
+        if (rx <= 0 || ry <= 0) return false;
+        double dx = q.X - b.Center.X, dy = q.Y - b.Center.Y;
+        static double N(double dx, double dy, double rx, double ry) => rx <= 0 || ry <= 0 ? double.MaxValue : (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+        if (N(dx, dy, rx + band, ry + band) > 1) return false;
+        return rx - band <= 0 || ry - band <= 0 || N(dx, dy, rx - band, ry - band) >= 1;
     }
 
     private static PointD Local(Annotation a, PointD p) =>

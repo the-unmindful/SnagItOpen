@@ -86,7 +86,8 @@ public sealed class DocumentRenderer
     private void DrawScene(DrawingContext dc, DocumentState doc, RenderSettings s, bool includeMagnifiers)
     {
         var hidden = s.HiddenAnnotations;
-        bool Show(Annotation a) => hidden is null || !hidden.Contains(a.Id);
+        // Hidden items are skipped, except redactions: they always cover, so hiding can never expose pixels.
+        bool Show(Annotation a) => (hidden is null || !hidden.Contains(a.Id)) && (!a.Hidden || a is RedactionAnnotation);
         // Annotations are canvas objects: convert any legacy image-linked ones to document space.
         doc = AnnotationCanvas.Normalize(doc);
 

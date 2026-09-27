@@ -362,9 +362,23 @@ public static class DocumentOps
         var list = doc.Annotations.ToList();
         var sel = list.Where(a => ids.Contains(a.Id)).ToList();
         if (sel.Count == 0) return doc;
-        list.RemoveAll(a => ids.Contains(a.Id));
-        if (move is ZMove.ToFront or ZMove.Forward) list.AddRange(sel); else list.InsertRange(0, sel);
-        return doc with { Annotations = list.ToArray() };
+        switch (move)
+        {
+            case ZMove.ToFront:
+                list.RemoveAll(a => ids.Contains(a.Id)); list.AddRange(sel); break;
+            case ZMove.ToBack:
+                list.RemoveAll(a => ids.Contains(a.Id)); list.InsertRange(0, sel); break;
+            case ZMove.Forward:
+                // Each selected item hops over the next unselected item above it.
+                for (int k = list.Count - 2; k >= 0; k--)
+                    if (ids.Contains(list[k].Id) && !ids.Contains(list[k + 1].Id)) (list[k], list[k + 1]) = (list[k + 1], list[k]);
+                break;
+            case ZMove.Backward:
+                for (int k = 1; k < list.Count; k++)
+                    if (ids.Contains(list[k].Id) && !ids.Contains(list[k - 1].Id)) (list[k], list[k - 1]) = (list[k - 1], list[k]);
+                break;
+        }
+        return list.SequenceEqual(doc.Annotations) ? doc : doc with { Annotations = list.ToArray() };
     }
 
     /// <summary>Renumbers step annotations 1..n in their current drawing order.</summary>

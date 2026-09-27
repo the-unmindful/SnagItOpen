@@ -336,16 +336,9 @@ public sealed class CanvasView : FrameworkElement
     private static RectD AnnotationDocBounds(DocumentState doc, Annotation a) =>
         a is LineAnnotation or FreehandAnnotation ? a.Extent() : a.RotatedBox;
 
-    private Annotation? HitAnnotation(DocumentState doc, PointD p)
-    {
-        double tol = 4 / _view.Zoom;
-        for (int i = doc.Annotations.Length - 1; i >= 0; i--)
-        {
-            var a = doc.Annotations[i];
-            if (AnnotationGeometry.HitTest(a, p, tol)) return a;
-        }
-        return null;
-    }
+    /// <summary>Topmost annotation whose painted shape is under <paramref name="p"/> (unfilled interiors are see-through).</summary>
+    private Annotation? HitAnnotation(DocumentState doc, PointD p) =>
+        AnnotationGeometry.HitStack(doc.Annotations, p, 6 / _view.Zoom).FirstOrDefault();
 
     /// <summary>Rotate-handle offset in document pixels (constant 24 DIPs on screen).</summary>
     private double RotateDistance => 24 / _view.Zoom;
@@ -515,7 +508,24 @@ public sealed class CanvasView : FrameworkElement
             return;
         }
 
-        var ann = HitAnnotation(doc, _downDoc);
+        bool alt = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
+        double tol = 6 / _view.Zoom;
+        var stack = AnnotationGeometry.HitStack(doc.Annotations, _downDoc, tol);
+        Annotation? ann;
+        if (alt && stack.Count > 0)
+        {
+            // Alt+click cycles down through everything under the pointer.
+            int cur = -1;
+            for (int i = 0; i < stack.Count; i++) if (vm.SelectedAnnotations.Contains(stack[i].Id)) { cur = i; break; }
+            ann = stack[(cur + 1) % stack.Count];
+            vm.Select([], [ann.Id]);
+            _drag = Drag.Move;
+            return;
+        }
+        // A selected item can be dragged from anywhere inside its box, even a see-through interior.
+        ann = !ctrl ? doc.Annotations.LastOrDefault(a => vm.SelectedAnnotations.Contains(a.Id) && !a.Hidden
+                          && AnnotationGeometry.InsideBox(a, _downDoc, tol)) : null;
+        ann ??= stack.FirstOrDefault();
         var img = ann is null ? DocumentOps.HitTestImage(doc, _downDoc) : null;
         if (ann is not null)
         {
