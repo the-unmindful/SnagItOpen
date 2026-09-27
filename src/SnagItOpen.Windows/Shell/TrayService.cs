@@ -52,7 +52,10 @@ public sealed class TrayService : IDisposable
         try
         {
             var p = Environment.ProcessPath;
-            return p is null ? null : System.Drawing.Icon.ExtractAssociatedIcon(p);
+            if (p is null) return null;
+            // Pick the exe's icon frame at the tray's native size (DPI-aware) so it is not a blurry downscale of 32 px.
+            var size = WinForms.SystemInformation.SmallIconSize.Width;
+            return System.Drawing.Icon.ExtractIcon(p, 0, size) ?? System.Drawing.Icon.ExtractAssociatedIcon(p);
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { return null; }
     }

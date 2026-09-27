@@ -67,6 +67,7 @@ Done (all committed; see `git log --oneline`):
 - Annotation editing plan phases 0–6 (`docs/superpowers/plans/2026-09-27-annotation-editing.md`).
 - UX Phase A: click-through shapes, stacking controls, Objects list, colour picker, properties panel overhaul, locked canvas.
 - Fixes and extras: colour picker crash, image edge panel, custom defaults, multi-select, drag-duplicate, copy/paste style, installer, close-to-tray, start with Windows, shortcut recorder, drag the result out.
+- App icon: red rounded square with a white "S" (`src/SnagItOpen.App/Assets/SnagItOpen.ico`, 8 sizes 16–256). Regenerate with `.\scripts\make-icon.ps1`. Set as `<ApplicationIcon>`, so exe, taskbar, windows, shortcuts and tray all use it. The tray loads the frame at `SmallIconSize`, so it stays sharp at high DPI.
 
 Not yet done / next up:
 1. **Phase B (user asked for it, not started): template / asset gallery.** A panel that drops down when a tool is picked, showing ready-made visual variants (e.g. arrow styles) to add with one click, plus add/delete/reorder of templates. Likely builds on `AnnotationStyleStore` quick styles and per-tool prototypes. **Plan first and get the user's approval before building.**

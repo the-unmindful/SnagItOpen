@@ -8,6 +8,7 @@
     <AssemblyName>SnagItOpen</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>SnagItOpen.App.App</StartupObject>
+    <ApplicationIcon>Assets\SnagItOpen.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
