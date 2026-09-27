@@ -422,8 +422,21 @@ public sealed class EditorViewModel : ObservableObject
 
     public void ZOrder(DocumentOps.ZMove move)
     {
-        if (_selectedImages.Count > 0) Commit("Arrange", d => DocumentOps.ChangeZOrder(d, _selectedImages, move));
-        if (_selectedAnnotations.Count > 0) Commit("Arrange", d => DocumentOps.ChangeAnnotationZOrder(d, _selectedAnnotations, move));
+        if (!HasSelection) return;
+        string label = move switch
+        {
+            DocumentOps.ZMove.ToFront => "Bring to front",
+            DocumentOps.ZMove.Forward => "Bring forward",
+            DocumentOps.ZMove.Backward => "Send backward",
+            _ => "Send to back",
+        };
+        // One undo step even when images and annotations are both selected.
+        if (!Commit(label, d =>
+            {
+                var r = _selectedImages.Count > 0 ? DocumentOps.ChangeZOrder(d, _selectedImages, move) : d;
+                return _selectedAnnotations.Count > 0 ? DocumentOps.ChangeAnnotationZOrder(r, _selectedAnnotations, move) : r;
+            }))
+            Status = move is DocumentOps.ZMove.ToFront or DocumentOps.ZMove.Forward ? "Already on top." : "Already at the back.";
     }
 
     public void Nudge(int dx, int dy)

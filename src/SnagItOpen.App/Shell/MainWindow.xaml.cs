@@ -500,6 +500,8 @@ public partial class MainWindow : Window
             case Key.OemPlus or Key.Add when !ctrl && _vm.SelectedAnnotations.Count > 0: _vm.AdjustStepNumbers(1); break;
             case Key.OemMinus or Key.Subtract when !ctrl && _vm.SelectedAnnotations.Count > 0: _vm.AdjustStepNumbers(-1); break;
             case Key.Tab when !ctrl && Canvas.IsKeyboardFocusWithin && _vm.Document.Annotations.Length > 0: CycleAnnotation(shift ? -1 : 1); break;
+            case Key.OemCloseBrackets when ctrl && _vm.HasSelection: _vm.ZOrder(shift ? DocumentOps.ZMove.ToFront : DocumentOps.ZMove.Forward); break;
+            case Key.OemOpenBrackets when ctrl && _vm.HasSelection: _vm.ZOrder(shift ? DocumentOps.ZMove.ToBack : DocumentOps.ZMove.Backward); break;
             case Key.Z when ctrl && shift: _vm.Redo(); break;
             case Key.Z when ctrl: _vm.Undo(); break;
             case Key.Y when ctrl: _vm.Redo(); break;

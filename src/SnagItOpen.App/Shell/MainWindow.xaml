@@ -42,10 +42,10 @@
                 <MenuItem Header="Flip _horizontal" Click="OnFlipH" />
                 <MenuItem Header="Flip _vertical" Click="OnFlipV" />
                 <Separator />
-                <MenuItem Header="Bring to front" Click="OnToFront" />
-                <MenuItem Header="Bring forward" Click="OnForward" />
-                <MenuItem Header="Send backward" Click="OnBackward" />
-                <MenuItem Header="Send to back" Click="OnToBack" />
+                <MenuItem Header="Bring to front" InputGestureText="Ctrl+Shift+]" Click="OnToFront" />
+                <MenuItem Header="Bring forward" InputGestureText="Ctrl+]" Click="OnForward" />
+                <MenuItem Header="Send backward" InputGestureText="Ctrl+[" Click="OnBackward" />
+                <MenuItem Header="Send to back" InputGestureText="Ctrl+Shift+[" Click="OnToBack" />
                 <Separator />
                 <MenuItem Header="Reset crop" Click="OnResetCrop" />
                 <MenuItem Header="Remove blur/pixelate" Click="OnClearEffects" />
@@ -123,6 +123,12 @@
                 <Button Content="Save project" ToolTip="Save an editable .sio project (Ctrl+S)" Click="OnSave" />
             </ToolBar>
             <ToolBar x:Name="ToolsBar" Band="1" ToolBarTray.IsLocked="True" />
+            <ToolBar Band="1" ToolBarTray.IsLocked="True" AutomationProperties.Name="Arrange">
+                <Button Content="⤒ Front" ToolTip="Bring to front (Ctrl+Shift+])" Click="OnToFront" AutomationProperties.Name="Bring to front" />
+                <Button Content="↑ Forward" ToolTip="Bring forward one step (Ctrl+])" Click="OnForward" AutomationProperties.Name="Bring forward" />
+                <Button Content="↓ Backward" ToolTip="Send backward one step (Ctrl+[)" Click="OnBackward" AutomationProperties.Name="Send backward" />
+                <Button Content="⤓ Back" ToolTip="Send to back (Ctrl+Shift+[)" Click="OnToBack" AutomationProperties.Name="Send to back" />
+            </ToolBar>
         </ToolBarTray>
 
         <StatusBar DockPanel.Dock="Bottom">
