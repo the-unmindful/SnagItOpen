@@ -44,7 +44,13 @@ public sealed class CanvasView : FrameworkElement
     private bool _fitPending = true;
 
     // gesture state
-    private enum Drag { None, Pan, Move, Resize, AnnResize, Marquee, Draw, Freehand, Crop }
+    private enum Drag { None, Pan, Move, Resize, AnnHandle, Marquee, Draw, Freehand, Crop }
+    private const double RotateDistanceDips = 26;
+    private static readonly Pen HoverPen = Frozen(new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 120, 215)), 1));
+    private static readonly Brush RotateFill = Frozen(new SolidColorBrush(Color.FromRgb(0, 120, 215)));
+    private static readonly Brush TailFill = Frozen(new SolidColorBrush(Color.FromRgb(255, 200, 0)));
+    private static readonly Brush BendFill = Frozen(new SolidColorBrush(Color.FromRgb(120, 220, 120)));
+    private static readonly Brush LabelBack = Frozen(new SolidColorBrush(Color.FromArgb(210, 30, 30, 30)));
     private Drag _drag;
     private Point _downView;
     private PointD _downDoc;
@@ -52,7 +58,10 @@ public sealed class CanvasView : FrameworkElement
     private ResizeHandle _handle;
     private PixelRect _resizeStart;
     private Guid _resizeTarget;
-    private RectD _annStart;
+    private AnnotationHandle _annHandle;
+    private Annotation? _annStart;
+    private Guid? _hover;
+    private double? _angleLabel;
     private Guid? _drawLayer;
     private readonly List<PointD> _freehand = [];
     private SnapLine[] _guides = [];
@@ -196,12 +205,14 @@ public sealed class CanvasView : FrameworkElement
             dc.DrawRectangle(null, SelectionPen, r);
             if (_vm.SelectedImages.Count == 1 && _vm.SelectedAnnotations.Count == 0 && Tool == ToolKind.Select) DrawHandles(dc, r);
         }
+        if (_hover is { } hid && !_vm.SelectedAnnotations.Contains(hid) && _drag == Drag.None && doc.FindAnnotation(hid) is { } ha)
+            DrawOutline(dc, ha, HoverPen);
         foreach (var id in _vm.SelectedAnnotations)
         {
             if (doc.FindAnnotation(id) is not { } a) continue;
-            var r = ToView(AnnotationDocBounds(doc, a));
-            dc.DrawRectangle(null, AnnSelectionPen, r);
-            if (_vm.SelectedAnnotations.Count == 1 && _vm.SelectedImages.Count == 0 && Tool == ToolKind.Select) DrawHandles(dc, r);
+            DrawOutline(dc, a, AnnSelectionPen);
+            if (_vm.SelectedAnnotations.Count == 1 && _vm.SelectedImages.Count == 0 && Tool == ToolKind.Select) DrawAnnotationHandles(dc, a);
+            if (a.Locked) DrawLockBadge(dc, ToView(AnnotationDocBounds(doc, a)));
         }
 
         foreach (var g in _guides)
@@ -211,6 +222,17 @@ public sealed class CanvasView : FrameworkElement
         }
 
         DrawDraft(dc, doc);
+        if (_angleLabel is { } ang && _drag == Drag.AnnHandle)
+            DrawSizeLabelText(dc, $"{ang:0.#}°", ToView(_curDoc));
+    }
+
+    private void DrawSizeLabelText(DrawingContext dc, string text, Point at)
+    {
+        var ft = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            new Typeface("Segoe UI"), 11, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        var p = new Point(at.X + 14, at.Y + 14);
+        dc.DrawRoundedRectangle(LabelBack, null, new Rect(p.X, p.Y, ft.Width + 8, ft.Height + 4), 3, 3);
+        dc.DrawText(ft, new Point(p.X + 4, p.Y + 2));
     }
 
     private void DrawCenteredText(DrawingContext dc, string text, double size)
@@ -294,12 +316,8 @@ public sealed class CanvasView : FrameworkElement
 
     // ================================================================== hit testing
 
-    private static RectD AnnotationDocBounds(DocumentState doc, Annotation a)
-    {
-        var b = a.Bounds.IsEmpty ? a.Extent() : a.Bounds;
-        if (a is LineAnnotation || a is FreehandAnnotation) b = a.Extent();
-        return b;
-    }
+    private static RectD AnnotationDocBounds(DocumentState doc, Annotation a) =>
+        a is LineAnnotation or FreehandAnnotation ? a.Extent() : a.RotatedBox;
 
     private Annotation? HitAnnotation(DocumentState doc, PointD p)
     {
@@ -307,9 +325,78 @@ public sealed class CanvasView : FrameworkElement
         for (int i = doc.Annotations.Length - 1; i >= 0; i--)
         {
             var a = doc.Annotations[i];
-            if (AnnotationDocBounds(doc, a).Inflate(tol).Contains(p)) return a;
+            if (AnnotationGeometry.HitTest(a, p, tol)) return a;
         }
         return null;
+    }
+
+    /// <summary>Rotate-handle offset in document pixels (constant 24 DIPs on screen).</summary>
+    private double RotateDistance => 24 / _view.Zoom;
+
+    private IReadOnlyList<AnnotationHandle> HandlesOf(Annotation a) => AnnotationGeometry.Handles(a, RotateDistance);
+
+    private AnnotationHandle? HitAnnotationHandle(Annotation a, Point viewPoint) =>
+        AnnotationGeometry.HitHandle(HandlesOf(a), ToDoc(viewPoint), HandleSize / _view.Zoom);
+
+    private void DrawOutline(DrawingContext dc, Annotation a, Pen pen)
+    {
+        if (a is LineAnnotation l)
+        {
+            var pts = AnnotationGeometry.Sample(l);
+            var g = new StreamGeometry();
+            using (var c = g.Open())
+            {
+                c.BeginFigure(ToView(pts[0]), false, false);
+                for (int i = 1; i < pts.Length; i++) c.LineTo(ToView(pts[i]), true, false);
+            }
+            g.Freeze();
+            dc.DrawGeometry(null, pen, g);
+            return;
+        }
+        var corners = AnnotationGeometry.Outline(a);
+        if (corners is null) { dc.DrawRectangle(null, pen, ToView(a.Extent())); return; }
+        var poly = new StreamGeometry();
+        using (var c = poly.Open())
+        {
+            c.BeginFigure(ToView(corners[0]), false, true);
+            for (int i = 1; i < corners.Length; i++) c.LineTo(ToView(corners[i]), true, false);
+        }
+        poly.Freeze();
+        dc.DrawGeometry(null, pen, poly);
+    }
+
+    private void DrawAnnotationHandles(DrawingContext dc, Annotation a)
+    {
+        var hs = HandlesOf(a);
+        // Connector from box top to the rotate handle.
+        foreach (var h in hs)
+        {
+            var p = ToView(h.Position);
+            switch (h.Kind)
+            {
+                case HandleKind.Resize:
+                    dc.DrawRectangle(HandleFill, SelectionPen, new Rect(p.X - HandleSize / 2, p.Y - HandleSize / 2, HandleSize, HandleSize));
+                    break;
+                case HandleKind.Rotate:
+                    dc.DrawEllipse(RotateFill, SelectionPen, p, HandleSize / 2 + 1, HandleSize / 2 + 1);
+                    break;
+                case HandleKind.Start or HandleKind.End:
+                    dc.DrawEllipse(HandleFill, SelectionPen, p, HandleSize / 2 + 1, HandleSize / 2 + 1);
+                    break;
+                case HandleKind.Bend:
+                    dc.DrawRectangle(BendFill, SelectionPen, new Rect(p.X - HandleSize / 2 + 1, p.Y - HandleSize / 2 + 1, HandleSize - 2, HandleSize - 2));
+                    break;
+                case HandleKind.Tail:
+                    dc.DrawEllipse(TailFill, SelectionPen, p, HandleSize / 2 + 1, HandleSize / 2 + 1);
+                    break;
+            }
+        }
+    }
+
+    private static void DrawLockBadge(DrawingContext dc, Rect r)
+    {
+        var ft = new FormattedText("🔒", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Emoji"), 11, Brushes.Black, 1.0);
+        dc.DrawText(ft, new Point(r.Right + 2, r.Y - ft.Height));
     }
 
     private ResizeHandle? HitHandle(Rect viewRect, Point p)
@@ -405,9 +492,9 @@ public sealed class CanvasView : FrameworkElement
             return;
         }
         if (vm.SelectedAnnotations.Count == 1 && vm.SelectedImages.Count == 0 && vm.PrimaryAnnotation is { } sa &&
-            HitHandle(ToView(AnnotationDocBounds(doc, sa)), p) is { } ah)
+            HitAnnotationHandle(sa, p) is { } ah)
         {
-            _drag = Drag.AnnResize; _handle = ah; _annStart = AnnotationDocBounds(doc, sa); _resizeTarget = sa.Id;
+            _drag = Drag.AnnHandle; _annHandle = ah; _annStart = sa; _resizeTarget = sa.Id;
             return;
         }
 
@@ -441,7 +528,17 @@ public sealed class CanvasView : FrameworkElement
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        if (_vm is null || _drag == Drag.None) { UpdateHoverCursor(e.GetPosition(this)); return; }
+        if (_vm is null || _drag == Drag.None)
+        {
+            var hp = e.GetPosition(this);
+            UpdateHoverCursor(hp);
+            if (_vm is not null)
+            {
+                var h = Tool == ToolKind.Select ? HitAnnotation(_vm.Document, ToDoc(hp))?.Id : null;
+                if (h != _hover) { _hover = h; InvalidateVisual(); }
+            }
+            return;
+        }
         var p = e.GetPosition(this);
         _curDoc = ToDoc(p);
         var baseDoc = _vm.Document;
@@ -460,7 +557,8 @@ public sealed class CanvasView : FrameworkElement
                     if (Math.Abs(p.X - _downView.X) < 2 && Math.Abs(p.Y - _downView.Y) < 2) return;
                     (dx, dy) = Snap(baseDoc, dx, dy, alt);
                     int ix = (int)Math.Round(dx), iy = (int)Math.Round(dy);
-                    TryPreview(d => DocumentOps.Move(d, _vm.SelectedImages, _vm.SelectedAnnotations, ix, iy));
+                    var movable = _vm.SelectedAnnotations.Where(id => baseDoc.FindAnnotation(id) is { Locked: false }).ToHashSet();
+                    TryPreview(d => DocumentOps.Move(d, _vm.SelectedImages, movable, ix, iy));
                     return;
                 }
             case Drag.Resize:
@@ -470,10 +568,20 @@ public sealed class CanvasView : FrameworkElement
                     TryPreview(d => DocumentOps.SetBounds(d, _resizeTarget, nb));
                     return;
                 }
-            case Drag.AnnResize:
+            case Drag.AnnHandle:
                 {
-                    var nr = ResizeRectD(_annStart, _handle, _curDoc.X - _downDoc.X, _curDoc.Y - _downDoc.Y, shift);
-                    TryPreview(d => ResizeAnnotation(d, _resizeTarget, _annStart, nr));
+                    if (_annStart is not { } start) return;
+                    var changed = AnnotationGeometry.Drag(start, _annHandle, _downDoc, _curDoc, shift);
+                    if (changed is TextAnnotation ta && _annHandle.Kind == HandleKind.Resize && ta is not CalloutAnnotation { Shape: CalloutShape.Ellipse })
+                    {
+                        // Side handles re-wrap text; the box grows to fit.
+                        double need = AnnotationRenderer.MeasureTextHeight(ta);
+                        if (need > ta.Bounds.Height) changed = ta with { Bounds = ta.Bounds with { Height = need } };
+                    }
+                    _angleLabel = _annHandle.Kind == HandleKind.Rotate
+                        ? (changed is LineAnnotation ln ? Rotation2D.Normalize(Rotation2D.AngleOf(ln.Start, ln.End)) : changed.Rotation)
+                        : null;
+                    TryPreview(d => DocumentOps.UpdateAnnotation(d, changed));
                     return;
                 }
             case Drag.Freehand:
@@ -544,6 +652,7 @@ public sealed class CanvasView : FrameworkElement
         if (_vm is null || _drag == Drag.None) return;
         var drag = _drag;
         _drag = Drag.None;
+        _angleLabel = null;
         ReleaseMouseCapture();
         _guides = [];
         _curDoc = ToDoc(e.GetPosition(this));
@@ -559,7 +668,7 @@ public sealed class CanvasView : FrameworkElement
             case Drag.Resize:
                 if (preview is not null) _vm.Commit("Resize", _ => preview);
                 break;
-            case Drag.AnnResize:
+            case Drag.AnnHandle:
                 if (preview is not null) _vm.Commit("Resize annotation", _ => preview);
                 break;
             case Drag.Marquee:
