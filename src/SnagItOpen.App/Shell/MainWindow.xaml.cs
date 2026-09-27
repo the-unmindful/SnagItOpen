@@ -79,6 +79,7 @@ public partial class MainWindow : Window
         Canvas.PrototypeProvider = k => _services.AnnotationStyles.Prototype(k.ToString());
         _props = new AnnotationPropertiesPanel(services, vm, () => Canvas.Tool, k => _services.ToolStyles.Get(k.ToString(), DefaultStyle(k)));
         AnnotationPanelHost.Content = _props;
+        ObjectsHost.Content = new ObjectsList(vm);
         // Changes made while a panel field had focus (e.g. undo) show once focus leaves the panel.
         _props.IsKeyboardFocusWithinChanged += (_, e) => { if (e.NewValue is false) RefreshPropsSoon(); };
         Canvas.SnapEnabled = _services.Settings.SnapEnabled;
@@ -360,6 +361,12 @@ public partial class MainWindow : Window
     /// Opens an on-canvas text box over the annotation (IME works as in any TextBox). Ctrl+Enter or clicking
     /// elsewhere commits; Escape cancels. Tool shortcuts are ignored while it has focus.
     /// </summary>
+    /// <summary>Opens the on-canvas editor for an existing text or callout (used by the Objects list).</summary>
+    public void EditTextOf(Guid id)
+    {
+        if (_vm.Document.FindAnnotation(id) is TextAnnotation t) { _vm.Select([], [id]); OnEditText(t, false); }
+    }
+
     private void OnEditText(TextAnnotation t, bool isNew)
     {
         FinishTextEdit(commit: true);

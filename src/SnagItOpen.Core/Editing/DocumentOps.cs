@@ -381,6 +381,20 @@ public static class DocumentOps
         return list.SequenceEqual(doc.Annotations) ? doc : doc with { Annotations = list.ToArray() };
     }
 
+    /// <summary>Moves one annotation to drawing index <paramref name="index"/> (0 = bottom).</summary>
+    public static DocumentState MoveAnnotationToIndex(DocumentState doc, Guid id, int index)
+    {
+        var list = doc.Annotations.ToList();
+        int i = list.FindIndex(a => a.Id == id);
+        if (i < 0) return doc;
+        index = Math.Clamp(index, 0, list.Count - 1);
+        if (i == index) return doc;
+        var a = list[i];
+        list.RemoveAt(i);
+        list.Insert(index, a);
+        return doc with { Annotations = list.ToArray() };
+    }
+
     /// <summary>Renumbers step annotations 1..n in their current drawing order.</summary>
     public static DocumentState RenumberSteps(DocumentState doc)
     {

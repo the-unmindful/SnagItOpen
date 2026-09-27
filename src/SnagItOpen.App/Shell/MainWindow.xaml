@@ -153,9 +153,11 @@
                 <ColumnDefinition x:Name="PropsColumn" Width="290" MinWidth="0" />
             </Grid.ColumnDefinitions>
 
-            <!-- Image list -->
-            <DockPanel Grid.Column="0" Margin="4">
-                <TextBlock DockPanel.Dock="Top" Text="Images (layout order)" Style="{StaticResource SectionHeader}" Margin="2,2,0,4" />
+            <!-- Image list / objects -->
+            <TabControl x:Name="LeftTabs" Grid.Column="0" Margin="4" Padding="0">
+            <TabItem Header="Images">
+            <DockPanel Margin="2">
+                <TextBlock DockPanel.Dock="Top" Text="Layout order" Opacity="0.7" Margin="2,2,0,4" />
                 <UniformGrid DockPanel.Dock="Bottom" Rows="1" Margin="0,4,0,0">
                     <Button Content="Up" Click="OnMoveUp" ToolTip="Move earlier in the combine order (Alt+Up)" Margin="1" />
                     <Button Content="Down" Click="OnMoveDown" ToolTip="Move later in the combine order (Alt+Down)" Margin="1" />
@@ -194,6 +196,11 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
             </DockPanel>
+            </TabItem>
+            <TabItem Header="Objects">
+                <ContentControl x:Name="ObjectsHost" Focusable="False" />
+            </TabItem>
+            </TabControl>
 
             <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="#FFDDDDDD" Focusable="False" />
 
