@@ -3,13 +3,17 @@
 A local, offline Windows screenshot capture and image editor built around fast vertical/horizontal
 combining and a free canvas. C# / .NET 10 / WPF. Not affiliated with TechSmith.
 
-This is a **preview**: it builds, passes 205 automated tests and launches, but the manual acceptance
+This is a **preview**: it builds, passes 290 automated tests and launches, but the manual acceptance
 checklist has not been run yet. See [verification evidence](docs/evidence/verification.md).
+Developers and AI agents: start with [docs/HANDOFF.md](docs/HANDOFF.md).
 
-## Run
+## Install and run
 
-- From the package: unzip `SnagItOpen-0.1.0-win-x64.zip` and run `SnagItOpen.exe`. No .NET install
-  is needed. Delete the folder to uninstall; user data is in `%LOCALAPPDATA%\SnagItOpen`.
+- Install (per user, no admin): `.\scripts\install.ps1` (options `-StartWithWindows`, `-DesktopShortcut`).
+  It installs to `%LOCALAPPDATA%\Programs\SnagItOpen` with a Start menu shortcut and an uninstaller.
+- Closing the editor keeps SnagItOpen in the tray so hotkeys keep working. Quit from the tray menu.
+- Portable: unzip `SnagItOpen-0.1.0-win-x64.zip` and run `SnagItOpen.exe`. User data is in
+  `%LOCALAPPDATA%\SnagItOpen`.
 - From source: see [BUILD.md](docs/BUILD.md).
 
 ## What it does
@@ -26,8 +30,9 @@ checklist has not been run yet. See [verification evidence](docs/evidence/verifi
 - **Output and files:** copy image, PNG/JPEG export, editable `.sio` projects, pin to screen, recent
   captures library, layout and capture presets, global hotkeys, tray icon, autosave recovery.
 
-Default hotkeys: Ctrl+Shift+1 region, Ctrl+Shift+2 window, Ctrl+Shift+3 append region,
-Ctrl+Shift+4 all monitors (Help → Keyboard shortcuts lists everything).
+Default hotkeys: PrintScreen region (Ctrl+PrintScreen if Windows reserves PrintScreen), Ctrl+Shift+2
+window, Ctrl+Shift+3 append region, Ctrl+Shift+4 all monitors. Change them in Settings by pressing the
+keys (Help → Keyboard shortcuts lists everything).
 
 ## Known limitations
 
