@@ -207,6 +207,25 @@
             <!-- Canvas -->
             <DockPanel Grid.Column="2">
             <Border x:Name="GalleryHost" DockPanel.Dock="Bottom" BorderBrush="#FFDDDDDD" BorderThickness="0,1,0,0" />
+            <Border DockPanel.Dock="Top" BorderBrush="#FFDDDDDD" BorderThickness="0,0,0,1" Background="#FFF7F7F7" Padding="6,3">
+                <WrapPanel VerticalAlignment="Center">
+                    <TextBlock Text="Canvas:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,6,0" />
+                    <RadioButton x:Name="CanvasAutoBtn" Content="Auto" GroupName="canvasmode" VerticalAlignment="Center" Margin="0,0,6,0" Click="OnCanvasAuto"
+                                 ToolTip="Canvas grows to fit everything" />
+                    <RadioButton x:Name="CanvasLockBtn" Content="Locked" GroupName="canvasmode" VerticalAlignment="Center" Margin="0,0,10,0" Click="OnCanvasLock"
+                                 ToolTip="Fixed size: anything outside the dotted border is not exported. Drag the border or its handles to change it." />
+                    <TextBox x:Name="CanvasWBox" Width="56" VerticalContentAlignment="Center" AutomationProperties.Name="Canvas width" KeyDown="OnCanvasSizeKey" LostKeyboardFocus="OnCanvasSizeCommit" />
+                    <TextBlock Text=" × " VerticalAlignment="Center" />
+                    <TextBox x:Name="CanvasHBox" Width="56" VerticalContentAlignment="Center" AutomationProperties.Name="Canvas height" KeyDown="OnCanvasSizeKey" LostKeyboardFocus="OnCanvasSizeCommit" />
+                    <TextBlock Text=" px" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox x:Name="CanvasPresetBox" Width="130" Margin="0,0,10,0" AutomationProperties.Name="Canvas size preset" SelectionChanged="OnCanvasPreset" />
+                    <TextBlock Text="Outside:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                    <ComboBox x:Name="OutsideBox" Width="70" Margin="0,0,10,0" AutomationProperties.Name="Show content outside the canvas" SelectionChanged="OnOutsideMode"
+                              ToolTip="How content outside a locked canvas looks while editing (it is never exported)" />
+                    <Button x:Name="OutsideWarning" Content="⚠ Content outside canvas: Fit" Padding="6,1" Visibility="Collapsed" Click="OnFitCanvas"
+                            ToolTip="Some content lies outside the locked canvas and will be cut off. Click to fit the canvas to all content." />
+                </WrapPanel>
+            </Border>
             <Grid>
                 <ed:CanvasView x:Name="Canvas" />
                 <Canvas x:Name="TextEditorLayer" ClipToBounds="True" IsHitTestVisible="True" Background="{x:Null}" />

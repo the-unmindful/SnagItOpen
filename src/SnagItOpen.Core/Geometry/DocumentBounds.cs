@@ -44,6 +44,16 @@ public static class DocumentBounds
         return any ? u : default;
     }
 
+    /// <summary>True when any visible content extends beyond the export area (it will be cut off in output).</summary>
+    public static bool HasContentOutside(DocumentState doc)
+    {
+        var c = ContentBounds(doc);
+        if (c.IsEmpty) return false;
+        var e = doc.ExportArea.ToRectD();
+        const double eps = 0.5;
+        return c.X < e.X - eps || c.Y < e.Y - eps || c.Right > e.Right + eps || c.Bottom > e.Bottom + eps;
+    }
+
     /// <summary>Fit rectangle: floor(min) / ceil(max) of content, plus padding. 1×1 at origin if empty.</summary>
     public static PixelRect Fit(DocumentState doc, int padding)
     {

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -94,6 +95,7 @@ public partial class MainWindow : Window
 
         BuildToolBar();
         BuildCaptureMenus();
+        InitCanvasBar();
         GalleryMenu.IsChecked = _services.Settings.ShowCaptureGallery;
         SetGalleryVisible(_services.Settings.ShowCaptureGallery);
         SelectTool(ToolKind.Select);
@@ -284,6 +286,7 @@ public partial class MainWindow : Window
             Dispatcher.BeginInvoke(SyncListSelection, System.Windows.Threading.DispatcherPriority.Background);
         if (e.PropertyName is "" or null or nameof(EditorViewModel.SelectedAnnotations))
             RefreshPropsSoon();
+        if (e.PropertyName is "" or null) Dispatcher.BeginInvoke(SyncCanvasBar, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private void SyncListSelection()
@@ -944,6 +947,102 @@ public partial class MainWindow : Window
         var n = parts.Select(int.Parse).ToArray();
         _vm.SetCanvas(new PixelRect(n[0], n[1], n[2], n[3]));
         FitSoon();
+    }
+
+    // ================================================================== canvas bar (auto / locked)
+
+    private static readonly (string Name, int W, int H)[] CanvasPresets =
+    [
+        ("Current size", 0, 0), ("1920 × 1080", 1920, 1080), ("1280 × 720", 1280, 720),
+        ("1080 × 1080", 1080, 1080), ("800 × 600", 800, 600),
+    ];
+    private bool _canvasBarSync;
+
+    private void InitCanvasBar()
+    {
+        CanvasPresetBox.ItemsSource = CanvasPresets.Select(p => p.Name).ToList();
+        OutsideBox.ItemsSource = Enum.GetValues<OutsideCanvasMode>();
+        OutsideBox.SelectedItem = S.OutsideCanvas;
+        Canvas.Outside = S.OutsideCanvas;
+        SyncCanvasBar();
+    }
+
+    /// <summary>Reflects the document's canvas state in the bar and the content-outside warning.</summary>
+    private void SyncCanvasBar()
+    {
+        _canvasBarSync = true;
+        try
+        {
+            var d = _vm.Document;
+            CanvasAutoBtn.IsChecked = d.AutoCanvas;
+            CanvasLockBtn.IsChecked = !d.AutoCanvas;
+            if (!CanvasWBox.IsKeyboardFocusWithin) CanvasWBox.Text = d.ExportArea.Width.ToString(CultureInfo.CurrentCulture);
+            if (!CanvasHBox.IsKeyboardFocusWithin) CanvasHBox.Text = d.ExportArea.Height.ToString(CultureInfo.CurrentCulture);
+            CanvasPresetBox.SelectedIndex = -1;
+            OutsideWarning.Visibility = !d.AutoCanvas && DocumentBounds.HasContentOutside(d) ? Visibility.Visible : Visibility.Collapsed;
+        }
+        finally { _canvasBarSync = false; }
+    }
+
+    private void OnCanvasAuto(object sender, RoutedEventArgs e)
+    {
+        if (_canvasBarSync || _vm.Document.AutoCanvas) return;
+        _vm.FitCanvas();
+        FitSoon();
+    }
+
+    private void OnCanvasLock(object sender, RoutedEventArgs e)
+    {
+        if (_canvasBarSync || !_vm.Document.AutoCanvas) return;
+        _vm.SetCanvas(_vm.Document.ExportArea);
+        _vm.Status = "Canvas locked. Anything outside the dotted border is not exported; drag the border or its handles to change it.";
+    }
+
+    private void OnCanvasSizeKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { OnCanvasSizeCommit(sender, e); e.Handled = true; }
+        else if (e.Key == Key.Escape) { SyncCanvasBar(); Canvas.Focus(); e.Handled = true; }
+    }
+
+    private void OnCanvasSizeCommit(object sender, RoutedEventArgs e)
+    {
+        if (_canvasBarSync) return;
+        var a = _vm.Document.ExportArea;
+        if (!int.TryParse(CanvasWBox.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out var w) ||
+            !int.TryParse(CanvasHBox.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out var h) ||
+            w < 1 || h < 1 || w > Limits.MaxDimension || h > Limits.MaxDimension)
+        {
+            _vm.Status = $"Canvas width and height must be 1–{Limits.MaxDimension} px.";
+            SyncCanvasBar();
+            return;
+        }
+        if (w == a.Width && h == a.Height) return;
+        SetCanvasSizeCentered(w, h);
+    }
+
+    /// <summary>Locks the canvas at a new size, keeping its centre where it is.</summary>
+    private void SetCanvasSizeCentered(int w, int h)
+    {
+        var a = _vm.Document.ExportArea;
+        int x = a.X + (a.Width - w) / 2, y = a.Y + (a.Height - h) / 2;
+        _vm.SetCanvas(new PixelRect(x, y, w, h));
+        FitSoon();
+    }
+
+    private void OnCanvasPreset(object sender, SelectionChangedEventArgs e)
+    {
+        if (_canvasBarSync || CanvasPresetBox.SelectedIndex < 0) return;
+        var p = CanvasPresets[CanvasPresetBox.SelectedIndex];
+        if (p.W == 0) OnCanvasLock(sender, e);
+        else SetCanvasSizeCentered(p.W, p.H);
+        SyncCanvasBar();
+    }
+
+    private void OnOutsideMode(object sender, SelectionChangedEventArgs e)
+    {
+        if (_canvasBarSync || OutsideBox.SelectedItem is not OutsideCanvasMode m) return;
+        Canvas.Outside = m;
+        _services.SaveSettings(S with { OutsideCanvas = m });
     }
 
     private void OnScaleDocument(object sender, RoutedEventArgs e)

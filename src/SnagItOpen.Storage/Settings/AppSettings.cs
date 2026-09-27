@@ -18,6 +18,10 @@ public static class HotkeyActions
     public static readonly string[] All = [Region, Window, AppendRegion, FullScreen, LastRegion, Scrolling];
 }
 
+/// <summary>How the editor shows content outside a locked canvas (it is never exported).</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<OutsideCanvasMode>))]
+public enum OutsideCanvasMode { Dim, Show, Hide }
+
 /// <summary>Persisted user preferences (settings.json).</summary>
 public sealed record AppSettings
 {
@@ -29,6 +33,7 @@ public sealed record AppSettings
     public bool ShowTrayIcon { get; init; } = true;
     public bool CopyAfterCapture { get; init; }
     public bool SnapEnabled { get; init; } = true;
+    public OutsideCanvasMode OutsideCanvas { get; init; } = OutsideCanvasMode.Dim;
     public int JpegQuality { get; init; } = 90;
     public int HistoryMaxCount { get; init; } = 200;
     public int HistoryMaxMegabytes { get; init; } = 500;
@@ -81,6 +86,7 @@ public sealed record AppSettings
             CaptureDelaySeconds = CaptureOptions.AllowedDelays.Contains(CaptureDelaySeconds) ? CaptureDelaySeconds : 0,
             DefaultDestination = Enum.IsDefined(DefaultDestination) ? DefaultDestination : CaptureDestination.AppendBelow,
             JpegQuality = Math.Clamp(JpegQuality, 1, 100),
+            OutsideCanvas = Enum.IsDefined(OutsideCanvas) ? OutsideCanvas : OutsideCanvasMode.Dim,
             HistoryMaxCount = Math.Clamp(HistoryMaxCount, 1, 10_000),
             HistoryMaxMegabytes = Math.Clamp(HistoryMaxMegabytes, 10, 100_000),
             DefaultLayout = layout,

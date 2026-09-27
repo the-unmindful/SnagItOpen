@@ -44,7 +44,19 @@ public sealed class CanvasView : FrameworkElement
     private bool _fitPending = true;
 
     // gesture state
-    private enum Drag { None, Pan, Move, Resize, AnnHandle, Marquee, Draw, Freehand, Crop }
+    private enum Drag { None, Pan, Move, Resize, AnnHandle, Marquee, Draw, Freehand, Crop, CanvasEdge, CanvasMove }
+    private static readonly Pen LockedCanvasPen = Frozen(new Pen(new SolidColorBrush(Color.FromRgb(0, 120, 215)), 1.5) { DashStyle = DashStyles.Dot });
+    private static readonly Brush OutsideShade = Frozen(new SolidColorBrush(Color.FromArgb(150, 230, 230, 230)));
+    private static readonly Brush CanvasHandleFill = Frozen(new SolidColorBrush(Color.FromRgb(210, 232, 250)));
+    private PixelRect _canvasStart;
+
+    /// <summary>How content outside a locked canvas is shown in the editor (never exported).</summary>
+    public OutsideCanvasMode Outside
+    {
+        get => _outside;
+        set { _outside = value; InvalidateVisual(); }
+    }
+    private OutsideCanvasMode _outside = OutsideCanvasMode.Dim;
     private const double RotateDistanceDips = 26;
     private static readonly Pen HoverPen = Frozen(new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 120, 215)), 1));
     private static readonly Brush RotateFill = Frozen(new SolidColorBrush(Color.FromRgb(0, 120, 215)));
@@ -200,12 +212,25 @@ public sealed class CanvasView : FrameworkElement
         var export = ToView(doc.ExportArea.ToRectD());
         if (doc.Background.A < 255) dc.DrawRectangle(Checker, null, export);
 
+        bool locked = !doc.AutoCanvas;
+        bool hideOutside = locked && Outside == OutsideCanvasMode.Hide;
+        if (hideOutside) dc.PushClip(new RectangleGeometry(export));
         dc.PushTransform(new MatrixTransform(_view.Zoom, 0, 0, _view.Zoom, _view.PanX, _view.PanY));
         try { _vm.Services.Renderer.Draw(dc, doc, EditingAnnotation is { } eid ? new RenderSettings { HiddenAnnotations = new HashSet<Guid> { eid } } : null); }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or OutOfMemoryException) { }
         dc.Pop();
+        if (hideOutside) dc.Pop();
 
-        dc.DrawRectangle(null, ExportPen, export);
+        if (locked && Outside == OutsideCanvasMode.Dim)
+        {
+            // Content outside a locked canvas is not exported: shade it.
+            var shade = new GeometryGroup { FillRule = FillRule.EvenOdd };
+            shade.Children.Add(new RectangleGeometry(new Rect(0, 0, ActualWidth, ActualHeight)));
+            shade.Children.Add(new RectangleGeometry(export));
+            dc.DrawGeometry(OutsideShade, null, shade);
+        }
+        dc.DrawRectangle(null, locked ? LockedCanvasPen : ExportPen, export);
+        if (locked && Tool == ToolKind.Select && _drag is Drag.None or Drag.CanvasEdge) DrawHandles(dc, export, CanvasHandleFill);
 
         // Empty state
         if (!doc.HasVisibleContent)
@@ -259,13 +284,24 @@ public sealed class CanvasView : FrameworkElement
         dc.DrawText(ft, new Point((ActualWidth - ft.Width) / 2, (ActualHeight - ft.Height) / 2));
     }
 
-    private static void DrawHandles(DrawingContext dc, Rect r)
+    private static void DrawHandles(DrawingContext dc, Rect r) => DrawHandles(dc, r, HandleFill);
+
+    private static void DrawHandles(DrawingContext dc, Rect r, Brush fill)
     {
         foreach (var h in Enum.GetValues<ResizeHandle>())
         {
             var p = HandlePoint(r, h);
-            dc.DrawRectangle(HandleFill, SelectionPen, new Rect(p.X - HandleSize / 2, p.Y - HandleSize / 2, HandleSize, HandleSize));
+            dc.DrawRectangle(fill, SelectionPen, new Rect(p.X - HandleSize / 2, p.Y - HandleSize / 2, HandleSize, HandleSize));
         }
+    }
+
+    /// <summary>True when <paramref name="p"/> is within <paramref name="tol"/> DIPs of the rectangle's outline.</summary>
+    private static bool OnRectEdge(Rect r, Point p, double tol)
+    {
+        var outer = r; outer.Inflate(tol, tol);
+        if (!outer.Contains(p)) return false;
+        var inner = r; inner.Inflate(-tol, -tol);
+        return inner.IsEmpty || !inner.Contains(p);
     }
 
     private static Point HandlePoint(Rect r, ResizeHandle h) => h switch
@@ -507,6 +543,21 @@ public sealed class CanvasView : FrameworkElement
             _drag = Drag.AnnHandle; _annHandle = ah; _annStart = sa; _resizeTarget = sa.Id;
             return;
         }
+        // Locked canvas: its handles resize it; grabbing the dotted edge moves it.
+        if (!doc.AutoCanvas && !ctrl)
+        {
+            var er = ToView(doc.ExportArea.ToRectD());
+            if (HitHandle(er, p) is { } ch)
+            {
+                _drag = Drag.CanvasEdge; _handle = ch; _canvasStart = doc.ExportArea;
+                return;
+            }
+            if (OnRectEdge(er, p, 4) && HitAnnotation(doc, _downDoc) is null)
+            {
+                _drag = Drag.CanvasMove; _canvasStart = doc.ExportArea;
+                return;
+            }
+        }
 
         bool alt = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
         double tol = 6 / _view.Zoom;
@@ -574,6 +625,18 @@ public sealed class CanvasView : FrameworkElement
 
         switch (_drag)
         {
+            case Drag.CanvasEdge:
+                {
+                    var nb = ResizeGeometry.Resize(_canvasStart, _handle, _curDoc.X - _downDoc.X, _curDoc.Y - _downDoc.Y, keepAspect: shift);
+                    if (Limits.IsAcceptableExportSize(nb.Width, nb.Height)) TryPreview(d => DocumentOps.SetExportArea(d, nb));
+                    return;
+                }
+            case Drag.CanvasMove:
+                {
+                    var nb = _canvasStart.Translate((int)Math.Round(_curDoc.X - _downDoc.X), (int)Math.Round(_curDoc.Y - _downDoc.Y));
+                    TryPreview(d => DocumentOps.SetExportArea(d, nb));
+                    return;
+                }
             case Drag.Pan:
                 _view = _view with { PanX = _panStart.X + (p.X - _downView.X), PanY = _panStart.Y + (p.Y - _downView.Y) };
                 AfterViewChange();
@@ -697,6 +760,9 @@ public sealed class CanvasView : FrameworkElement
                 break;
             case Drag.AnnHandle:
                 if (preview is not null) _vm.Commit("Resize annotation", _ => preview);
+                break;
+            case Drag.CanvasEdge or Drag.CanvasMove:
+                if (preview is not null) _vm.Commit(drag == Drag.CanvasMove ? "Move canvas" : "Resize canvas", _ => preview);
                 break;
             case Drag.Marquee:
                 FinishMarquee();
