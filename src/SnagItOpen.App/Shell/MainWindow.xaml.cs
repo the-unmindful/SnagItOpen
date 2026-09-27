@@ -85,6 +85,10 @@ public partial class MainWindow : Window
         SnapBox.IsChecked = _services.Settings.SnapEnabled;
         Canvas.ViewChanged += () => ZoomText.Text = $"{Canvas.Zoom:P0}";
         Canvas.EditTextRequested += OnEditText;
+        Canvas.ViewChanged += PositionTextEditor;
+        Canvas.ContextMenuOpening += OnCanvasContextMenu;
+        Canvas.ContextMenu = new ContextMenu(); // enables ContextMenuOpening; replaced on open
+        Canvas.PreviewMouseDown += (_, _) => FinishTextEdit(commit: true);
         Canvas.CutOutRequested += r => _ = CutOutAsync(r);
 
         BuildToolBar();
@@ -346,18 +350,105 @@ public partial class MainWindow : Window
 
     private void OnSnapChanged(object sender, RoutedEventArgs e) => Canvas.SnapEnabled = SnapBox.IsChecked == true;
 
+    // ================================================================== in-place text editing
+
+    private TextBox? _textBox;
+    private TextAnnotation? _textTarget;
+    private bool _textIsNew, _textClosing;
+
+    /// <summary>
+    /// Opens an on-canvas text box over the annotation (IME works as in any TextBox). Ctrl+Enter or clicking
+    /// elsewhere commits; Escape cancels. Tool shortcuts are ignored while it has focus.
+    /// </summary>
     private void OnEditText(TextAnnotation t, bool isNew)
     {
-        var text = Dialogs.EditText(this, isNew ? "Add text" : "Edit text", t.Text);
-        if (text is null) return;
-        if (isNew && string.IsNullOrWhiteSpace(text)) return;
-        var updated = t with { Text = text };
-        double h = AnnotationRenderer.MeasureTextHeight(updated);
-        updated = updated with { Bounds = updated.Bounds with { Height = Math.Max(updated.Bounds.Height, h) } };
-        if (!WpfConvert.IsFontAvailable(updated.FontFamily))
-            _vm.Status = $"Font '{updated.FontFamily}' is not installed; a fallback font is shown and exported.";
-        if (isNew) _vm.AddAnnotation(updated);
-        else _vm.UpdateAnnotation(updated, "Edit text");
+        FinishTextEdit(commit: true);
+        if (t.Locked) { _vm.Status = "Unlock the text to edit it."; return; }
+        _textTarget = t;
+        _textIsNew = isNew;
+        var color = t is CalloutAnnotation c ? c.TextColor : t.Color;
+        var tb = new TextBox
+        {
+            Text = t.Text, AcceptsReturn = true, AcceptsTab = false, TextWrapping = TextWrapping.Wrap,
+            BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromRgb(0, 120, 215)),
+            Padding = new Thickness(0), Foreground = new SolidColorBrush(color.ToColor()),
+            Background = new SolidColorBrush(t.Fill is { A: > 0 } f ? f.ToColor() : Color.FromArgb(200, 255, 255, 255)),
+            FontFamily = new FontFamily(string.IsNullOrWhiteSpace(t.FontFamily) ? "Segoe UI" : t.FontFamily),
+            FontWeight = t.Bold ? FontWeights.Bold : FontWeights.Normal,
+            FontStyle = t.Italic ? FontStyles.Italic : FontStyles.Normal,
+            TextAlignment = t.Alignment switch { TextAlign.Center => TextAlignment.Center, TextAlign.Right => TextAlignment.Right, _ => TextAlignment.Left },
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        if (t.Underline) tb.TextDecorations = TextDecorations.Underline;
+        System.Windows.Automation.AutomationProperties.SetName(tb, "Annotation text. Ctrl+Enter to finish, Escape to cancel.");
+        tb.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape) { FinishTextEdit(commit: false); e.Handled = true; }
+            else if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { FinishTextEdit(commit: true); e.Handled = true; }
+        };
+        tb.LostKeyboardFocus += (_, _) => FinishTextEdit(commit: true);
+        tb.TextChanged += (_, _) => PositionTextEditor();
+        _textBox = tb;
+        if (!isNew) Canvas.EditingAnnotation = t.Id;
+        TextEditorLayer.Children.Add(tb);
+        PositionTextEditor();
+        Dispatcher.BeginInvoke(() => { tb.Focus(); tb.SelectAll(); }, System.Windows.Threading.DispatcherPriority.Input);
+        _vm.Status = "Type the text. Ctrl+Enter or click elsewhere to finish, Esc to cancel.";
+    }
+
+    /// <summary>Keeps the editor over the text area at the current zoom, pan and rotation.</summary>
+    private void PositionTextEditor()
+    {
+        if (_textBox is not { } tb || _textTarget is not { } t) return;
+        double z = Canvas.Zoom;
+        var area = AnnotationRenderer.TextArea(t);
+        var tl = Canvas.ToViewPoint(new PointD(area.X, area.Y));
+        tb.FontSize = Math.Clamp(t.FontSize * z, 1, 2000);
+        tb.Width = Math.Max(40, area.Width * z + 4);
+        tb.MinHeight = Math.Max(tb.FontSize * 1.4, area.Height * z);
+        System.Windows.Controls.Canvas.SetLeft(tb, tl.X - 2);
+        System.Windows.Controls.Canvas.SetTop(tb, tl.Y - 1);
+        if (t.Rotation != 0)
+        {
+            var c = Canvas.ToViewPoint(t.Bounds.Center);
+            tb.RenderTransformOrigin = new Point(0, 0);
+            tb.RenderTransform = new RotateTransform(t.Rotation, c.X - (tl.X - 2), c.Y - (tl.Y - 1));
+        }
+        else tb.RenderTransform = Transform.Identity;
+    }
+
+    private void FinishTextEdit(bool commit)
+    {
+        if (_textClosing || _textBox is not { } tb || _textTarget is not { } t) return;
+        _textClosing = true;
+        try
+        {
+            var text = tb.Text;
+            bool isNew = _textIsNew;
+            _textBox = null;
+            _textTarget = null;
+            TextEditorLayer.Children.Remove(tb);
+            Canvas.EditingAnnotation = null;
+            if (!commit) { _vm.Status = isNew ? "Text canceled." : "Edit canceled."; return; }
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                if (!isNew) _vm.Commit("Delete text", d => DocumentOps.RemoveAnnotations(d, [t.Id]));
+                return;
+            }
+            if (!isNew && text == t.Text) return;
+            var updated = t with { Text = text };
+            double h = AnnotationRenderer.MeasureTextHeight(updated);
+            updated = updated with { Bounds = updated.Bounds with { Height = Math.Max(updated.Bounds.Height, h) } };
+            if (!WpfConvert.IsFontAvailable(updated.FontFamily))
+                _vm.Status = $"Font '{updated.FontFamily}' is not installed; a fallback font is shown and exported.";
+            if (isNew) _vm.AddAnnotation(updated);
+            else _vm.UpdateAnnotation(updated, "Edit text");
+        }
+        finally
+        {
+            _textClosing = false;
+            Canvas.Focus();
+        }
     }
 
     // ================================================================== edges
@@ -400,8 +491,15 @@ public partial class MainWindow : Window
             case Key.S when ctrl: OnSave(this, e); break;
             case Key.E when ctrl: OnExport(this, e); break;
             case Key.C when ctrl && shift: OnCopy(this, e); break;
+            case Key.C when ctrl && _vm.SelectedAnnotations.Count > 0: CopyAnnotationsToClipboard(); break;
             case Key.C when ctrl: OnCopy(this, e); break;
+            case Key.X when ctrl && _vm.SelectedAnnotations.Count > 0: CopyAnnotationsToClipboard(); _vm.CutAnnotations(); break;
+            case Key.V when ctrl && ClipboardHasAnnotations() && _vm.PasteAnnotations(): break;
             case Key.V when ctrl: OnPaste(this, e); break;
+            case Key.D when ctrl && _vm.SelectedAnnotations.Count > 0 && _vm.SelectedImages.Count == 0: _vm.DuplicateAnnotations(); break;
+            case Key.OemPlus or Key.Add when !ctrl && _vm.SelectedAnnotations.Count > 0: _vm.AdjustStepNumbers(1); break;
+            case Key.OemMinus or Key.Subtract when !ctrl && _vm.SelectedAnnotations.Count > 0: _vm.AdjustStepNumbers(-1); break;
+            case Key.Tab when !ctrl && Canvas.IsKeyboardFocusWithin && _vm.Document.Annotations.Length > 0: CycleAnnotation(shift ? -1 : 1); break;
             case Key.Z when ctrl && shift: _vm.Redo(); break;
             case Key.Z when ctrl: _vm.Undo(); break;
             case Key.Y when ctrl: _vm.Redo(); break;
@@ -434,6 +532,95 @@ public partial class MainWindow : Window
                 break;
         }
         if (handled) e.Handled = true;
+    }
+
+    // ================================================================== annotation clipboard and context menu
+
+    private const string AnnotationClipFormat = "SnagItOpen.Annotations";
+
+    /// <summary>Copies to the private annotation clipboard and marks the system clipboard, so Ctrl+V knows which paste to do.</summary>
+    private void CopyAnnotationsToClipboard()
+    {
+        _vm.CopyAnnotations();
+        try { System.Windows.Clipboard.SetDataObject(new DataObject(AnnotationClipFormat, "1"), copy: false); }
+        catch (System.Runtime.InteropServices.ExternalException) { /* private clipboard still works */ }
+    }
+
+    private bool ClipboardHasAnnotations()
+    {
+        if (!_vm.HasAnnotationClipboard) return false;
+        try { return System.Windows.Clipboard.ContainsData(AnnotationClipFormat); }
+        catch (System.Runtime.InteropServices.ExternalException) { return true; }
+    }
+
+    private void CycleAnnotation(int dir)
+    {
+        var anns = _vm.Document.Annotations;
+        int cur = _vm.PrimaryAnnotation is { } a ? Array.FindIndex(anns, x => x.Id == a.Id) : -1;
+        int next = cur < 0 ? (dir > 0 ? 0 : anns.Length - 1) : ((cur + dir) % anns.Length + anns.Length) % anns.Length;
+        _vm.Select([], [anns[next].Id]);
+        _vm.Status = $"{anns[next].Kind} {next + 1} of {anns.Length} selected (Tab / Shift+Tab to move).";
+    }
+
+    private void OnCanvasContextMenu(object sender, ContextMenuEventArgs e)
+    {
+        var menu = new ContextMenu();
+        MenuItem Item(string header, Action a, bool enabled = true, string? gesture = null)
+        {
+            var mi = new MenuItem { Header = header, IsEnabled = enabled, InputGestureText = gesture ?? "" };
+            mi.Click += (_, _) => a();
+            menu.Items.Add(mi);
+            return mi;
+        }
+        bool anns = _vm.SelectedAnnotations.Count > 0;
+        var primary = _vm.PrimaryAnnotation;
+        if (primary is TextAnnotation t) Item("Edit text", () => OnEditText(t, false));
+        Item("Cut", () => { CopyAnnotationsToClipboard(); _vm.CutAnnotations(); }, anns, "Ctrl+X");
+        Item("Copy", CopyAnnotationsToClipboard, anns, "Ctrl+C");
+        Item("Paste", () => _vm.PasteAnnotations(), _vm.HasAnnotationClipboard, "Ctrl+V");
+        Item("Duplicate", _vm.DuplicateAnnotations, anns, "Ctrl+D");
+        Item("Delete", _vm.RemoveSelected, anns || _vm.SelectedImages.Count > 0, "Del");
+        menu.Items.Add(new Separator());
+        Item("Copy style", _vm.CopyStyle, primary is not null);
+        Item("Paste style", _vm.PasteStyle, anns && _vm.HasStyleClipboard);
+        if (anns)
+        {
+            bool allLocked = _vm.SelectedAnnotationObjects.All(x => x.Locked);
+            Item(allLocked ? "Unlock" : "Lock", () => _vm.UpdateSelectedAnnotations(x => x with { Locked = !allLocked }, allLocked ? "Unlock" : "Lock"));
+        }
+        menu.Items.Add(new Separator());
+        var arrange = new MenuItem { Header = "Arrange", IsEnabled = anns || _vm.SelectedImages.Count > 0 };
+        void Sub(MenuItem parent, string h, Action a) { var mi = new MenuItem { Header = h }; mi.Click += (_, _) => a(); parent.Items.Add(mi); }
+        Sub(arrange, "Bring to front", () => _vm.ZOrder(DocumentOps.ZMove.ToFront));
+        Sub(arrange, "Bring forward", () => _vm.ZOrder(DocumentOps.ZMove.Forward));
+        Sub(arrange, "Send backward", () => _vm.ZOrder(DocumentOps.ZMove.Backward));
+        Sub(arrange, "Send to back", () => _vm.ZOrder(DocumentOps.ZMove.ToBack));
+        menu.Items.Add(arrange);
+        var align = new MenuItem { Header = "Align", IsEnabled = _vm.SelectedAnnotations.Count >= 2 };
+        Sub(align, "Left", () => _vm.Align(AlignMode.Left));
+        Sub(align, "Centre", () => _vm.Align(AlignMode.CenterX));
+        Sub(align, "Right", () => _vm.Align(AlignMode.Right));
+        Sub(align, "Top", () => _vm.Align(AlignMode.Top));
+        Sub(align, "Middle", () => _vm.Align(AlignMode.Middle));
+        Sub(align, "Bottom", () => _vm.Align(AlignMode.Bottom));
+        align.Items.Add(new Separator());
+        var dh = new MenuItem { Header = "Distribute horizontally", IsEnabled = _vm.SelectedAnnotations.Count >= 3 };
+        dh.Click += (_, _) => _vm.Distribute(true);
+        var dv = new MenuItem { Header = "Distribute vertically", IsEnabled = _vm.SelectedAnnotations.Count >= 3 };
+        dv.Click += (_, _) => _vm.Distribute(false);
+        align.Items.Add(dh);
+        align.Items.Add(dv);
+        menu.Items.Add(align);
+        if (_vm.SelectedAnnotationObjects.OfType<StepAnnotation>().Any())
+        {
+            menu.Items.Add(new Separator());
+            Item("Step number +1", () => _vm.AdjustStepNumbers(1), true, "+");
+            Item("Step number −1", () => _vm.AdjustStepNumbers(-1), true, "−");
+            Item("Renumber following steps", _vm.RenumberStepsFromSelected);
+        }
+        menu.PlacementTarget = Canvas;
+        menu.IsOpen = true;
+        e.Handled = true;
     }
 
     private bool ToolShortcut(Key key)

@@ -196,6 +196,7 @@
             <Border x:Name="GalleryHost" DockPanel.Dock="Bottom" BorderBrush="#FFDDDDDD" BorderThickness="0,1,0,0" />
             <Grid>
                 <ed:CanvasView x:Name="Canvas" />
+                <Canvas x:Name="TextEditorLayer" ClipToBounds="True" IsHitTestVisible="True" Background="{x:Null}" />
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                             Visibility="{Binding IsEmpty, Converter={StaticResource NotNullVis}}">
                     <TextBlock Text="Drop images here or paste a screenshot" FontSize="18" HorizontalAlignment="Center" Opacity="0.75" />

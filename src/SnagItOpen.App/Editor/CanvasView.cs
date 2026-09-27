@@ -153,6 +153,17 @@ public sealed class CanvasView : FrameworkElement
     /// <summary>Converts a point in this element's coordinates to document pixels.</summary>
     public PointD ToDocumentPoint(Point viewPoint) => ToDoc(viewPoint);
 
+    /// <summary>Converts a document point to this element's coordinates.</summary>
+    public Point ToViewPoint(PointD docPoint) => ToView(docPoint);
+
+    /// <summary>Annotation hidden from the canvas while it is edited in place.</summary>
+    public Guid? EditingAnnotation
+    {
+        get => _editing;
+        set { _editing = value; InvalidateVisual(); }
+    }
+    private Guid? _editing;
+
     private void AfterViewChange()
     {
         UpdatePlacementHint();
@@ -190,7 +201,7 @@ public sealed class CanvasView : FrameworkElement
         if (doc.Background.A < 255) dc.DrawRectangle(Checker, null, export);
 
         dc.PushTransform(new MatrixTransform(_view.Zoom, 0, 0, _view.Zoom, _view.PanX, _view.PanY));
-        try { _vm.Services.Renderer.Draw(dc, doc); }
+        try { _vm.Services.Renderer.Draw(dc, doc, EditingAnnotation is { } eid ? new RenderSettings { HiddenAnnotations = new HashSet<Guid> { eid } } : null); }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or OutOfMemoryException) { }
         dc.Pop();
 
