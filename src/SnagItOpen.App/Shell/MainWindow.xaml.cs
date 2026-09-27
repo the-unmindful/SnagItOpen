@@ -177,6 +177,7 @@ public partial class MainWindow : Window
             if (!r.IsSuccess) problems.Add($"{name}: {r.Message}");
         }
         LastHotkeyProblems = problems;
+        UpdateStartCardKeys();
         if (problems.Count > 0)
         {
             _vm.Status = "Hotkeys: " + string.Join(" ", problems);
@@ -185,6 +186,16 @@ public partial class MainWindow : Window
     }
 
     public IReadOnlyList<string> LastHotkeyProblems { get; private set; } = [];
+
+    /// <summary>Shows the actually registered global shortcuts on the empty-canvas start card.</summary>
+    private void UpdateStartCardKeys()
+    {
+        var region = ActiveHotkeys.TryGetValue(HotkeyActions.Region, out var rg) ? rg.ToString() : "Not set";
+        var window = ActiveHotkeys.TryGetValue(HotkeyActions.Window, out var wg) ? wg.ToString() : "Not set";
+        StartRegionKey.Content = region;
+        StartRegionKeyInline.Text = region;
+        StartWindowKey.Content = window;
+    }
 
     /// <summary>Starts with no visible window: creates the window handle (hotkeys, tray) without showing it.</summary>
     public void StartInTray()

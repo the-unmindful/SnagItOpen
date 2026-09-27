@@ -232,10 +232,10 @@ public sealed class CanvasView : FrameworkElement
         dc.DrawRectangle(null, locked ? LockedCanvasPen : ExportPen, export);
         if (locked && Tool == ToolKind.Select && _drag is Drag.None or Drag.CanvasEdge) DrawHandles(dc, export, CanvasHandleFill);
 
-        // Empty state
+        // Empty state: a truly empty document shows the start card (MainWindow.xaml) instead of drawn text.
         if (!doc.HasVisibleContent)
         {
-            DrawCenteredText(dc, "Drop images here, paste a screenshot (Ctrl+V), or use Capture.", 15);
+            if (!_vm.IsEmpty) DrawCenteredText(dc, "Everything on the canvas is hidden. Use the Objects list to show it.", 15);
             return;
         }
 

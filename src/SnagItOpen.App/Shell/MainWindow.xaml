@@ -8,6 +8,65 @@
     <Window.Resources>
         <inf:NotNullToVisibilityConverter x:Key="NotNullVis" />
         <inf:NotConverter x:Key="Not" />
+
+        <!-- Empty-canvas start card -->
+        <Style x:Key="StartButton" TargetType="Button">
+            <Setter Property="Margin" Value="5,0" />
+            <Setter Property="Padding" Value="10,12" />
+            <Setter Property="Foreground" Value="#FF222222" />
+            <Setter Property="Background" Value="#FFF4F4F4" />
+            <Setter Property="BorderBrush" Value="#FFD6D6D6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FFD3252B" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FF222222" />
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="StartPrimaryButton" TargetType="Button" BasedOn="{StaticResource StartButton}">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="#FFC81E26" />
+            <Setter Property="BorderBrush" Value="#FFA3141B" />
+        </Style>
+        <Style x:Key="StartShortcutText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#FF444444" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,4,10,4" />
+        </Style>
+        <Style x:Key="KeyCap" TargetType="Label">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontFamily" Value="Segoe UI Semibold" />
+            <Setter Property="Foreground" Value="#FF333333" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Label">
+                        <Border Background="#FFF6F6F6" BorderBrush="#FFCFCFCF" BorderThickness="1,1,1,2" CornerRadius="4" Padding="6,1">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <DockPanel>
         <Menu DockPanel.Dock="Top">
@@ -236,15 +295,88 @@
             <Grid>
                 <ed:CanvasView x:Name="Canvas" />
                 <Canvas x:Name="TextEditorLayer" ClipToBounds="True" IsHitTestVisible="True" Background="{x:Null}" />
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Visibility="{Binding IsEmpty, Converter={StaticResource NotNullVis}}">
-                    <TextBlock Text="Drop images here or paste a screenshot" FontSize="18" HorizontalAlignment="Center" Opacity="0.75" />
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0">
-                        <Button Content="Import images…" Padding="12,6" Margin="4" Click="OnImport" />
-                        <Button Content="Paste" Padding="12,6" Margin="4" Click="OnPaste" />
-                        <Button Content="Capture region" Padding="12,6" Margin="4" Click="OnCaptureRegion" />
-                    </StackPanel>
-                </StackPanel>
+                <!-- Start card: shown only while the document is empty; it sits above the canvas, so it disappears once content exists. -->
+                <Viewbox StretchDirection="DownOnly" Margin="24" Visibility="{Binding IsEmpty, Converter={StaticResource NotNullVis}}">
+                    <Border Background="White" CornerRadius="10" Padding="32,28" Width="560" BorderBrush="#FFDADADA" BorderThickness="1">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.18" Direction="270" />
+                        </Border.Effect>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <Border Width="36" Height="36" CornerRadius="8" Background="#FFD3252B" VerticalAlignment="Center">
+                                    <TextBlock Text="S" Foreground="White" FontSize="24" FontWeight="Black" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-3,0,0" />
+                                </Border>
+                                <TextBlock Text="Start a capture" FontSize="22" FontWeight="SemiBold" Foreground="#FF222222" VerticalAlignment="Center" Margin="12,0,0,0" />
+                            </StackPanel>
+                            <TextBlock Text="Capture part of the screen, import images, or drop files anywhere in this window."
+                                       FontSize="13" Foreground="#FF666666" TextWrapping="Wrap" TextAlignment="Center" Margin="0,10,0,20" />
+
+                            <UniformGrid Columns="3">
+                                <Button Style="{StaticResource StartPrimaryButton}" Click="OnCaptureRegion" AutomationProperties.Name="Capture region">
+                                    <StackPanel>
+                                        <TextBlock Text="Capture region" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                        <TextBlock x:Name="StartRegionKeyInline" Text="PrintScreen" FontSize="11" Opacity="0.85" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource StartButton}" Click="OnImport" AutomationProperties.Name="Import images">
+                                    <StackPanel>
+                                        <TextBlock Text="Import images…" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                        <TextBlock Text="Ctrl+O" FontSize="11" Foreground="#FF777777" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource StartButton}" Click="OnPaste" AutomationProperties.Name="Paste an image">
+                                    <StackPanel>
+                                        <TextBlock Text="Paste" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                        <TextBlock Text="Ctrl+V" FontSize="11" Foreground="#FF777777" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Button>
+                            </UniformGrid>
+
+                            <Grid Margin="0,24,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Height="1" Background="#FFE3E3E3" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="SHORTCUTS" FontSize="11" FontWeight="SemiBold" Foreground="#FF888888" Margin="10,0" />
+                                <Border Grid.Column="2" Height="1" Background="#FFE3E3E3" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="28" />
+                                    <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="Capture region (anywhere)" Style="{StaticResource StartShortcutText}" />
+                                <Label Grid.Row="0" Grid.Column="1" x:Name="StartRegionKey" Content="PrintScreen" Style="{StaticResource KeyCap}" />
+                                <TextBlock Grid.Row="1" Text="Capture window (anywhere)" Style="{StaticResource StartShortcutText}" />
+                                <Label Grid.Row="1" Grid.Column="1" x:Name="StartWindowKey" Content="Not set" Style="{StaticResource KeyCap}" />
+                                <TextBlock Grid.Row="2" Text="Undo / Redo" Style="{StaticResource StartShortcutText}" />
+                                <Label Grid.Row="2" Grid.Column="1" Content="Ctrl+Z / Ctrl+Y" Style="{StaticResource KeyCap}" />
+                                <TextBlock Grid.Row="3" Text="Copy result" Style="{StaticResource StartShortcutText}" />
+                                <Label Grid.Row="3" Grid.Column="1" Content="Ctrl+Shift+C" Style="{StaticResource KeyCap}" />
+
+                                <TextBlock Grid.Row="0" Grid.Column="3" Text="Select / Crop" Style="{StaticResource StartShortcutText}" />
+                                <Label Grid.Row="0" Grid.Column="4" Content="V / C" Style="{StaticResource KeyCap}" />
+                                <TextBlock Grid.Row="1" Grid.Column="3" Text="Arrow / Rectangle / Text" Style="{StaticResource StartShortcutText}" />
+                                <Label Grid.Row="1" Grid.Column="4" Content="A / R / T" Style="{StaticResource KeyCap}" />
+                                <TextBlock Grid.Row="2" Grid.Column="3" Text="Zoom to fit" Style="{StaticResource StartShortcutText}" />
+                                <Label Grid.Row="2" Grid.Column="4" Content="Ctrl+0" Style="{StaticResource KeyCap}" />
+                                <TextBlock Grid.Row="3" Grid.Column="3" Text="Export" Style="{StaticResource StartShortcutText}" />
+                                <Label Grid.Row="3" Grid.Column="4" Content="Ctrl+E" Style="{StaticResource KeyCap}" />
+                            </Grid>
+
+                            <TextBlock HorizontalAlignment="Center" Margin="0,16,0,0" FontSize="12">
+                                <Hyperlink Click="OnShortcuts" Foreground="#FFB7121C">All keyboard shortcuts</Hyperlink>
+                                <Run Text="  ·  " Foreground="#FFAAAAAA" />
+                                <Hyperlink Click="OnSettings" Foreground="#FFB7121C">Change shortcuts</Hyperlink>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                </Viewbox>
             </Grid>
             </DockPanel>
 
