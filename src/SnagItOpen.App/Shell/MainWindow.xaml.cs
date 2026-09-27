@@ -132,7 +132,8 @@ public partial class MainWindow : Window
             _services.Log("Hotkeys unavailable: " + ex.Message);
             _vm.Status = "Global hotkeys are unavailable; use the Capture menu.";
         }
-        if (S.ShowTrayIcon) CreateTray();
+        // The tray is required for close-to-tray; hotkeys only work while the app runs.
+        if (S.ShowTrayIcon || S.CloseToTray) CreateTray();
     }
 
     private void CreateTray()
@@ -145,6 +146,8 @@ public partial class MainWindow : Window
             new TrayMenuItem("Capture window", () => Dispatcher.BeginInvoke(() => _ = RunCaptureAsync(CaptureMode.Window))),
             new TrayMenuItem("Capture all monitors", () => Dispatcher.BeginInvoke(() => _ = RunCaptureAsync(CaptureMode.AllMonitors))),
             new TrayMenuItem("Scrolling capture", () => Dispatcher.BeginInvoke(() => OnScrolling(this, new RoutedEventArgs()))),
+            TrayMenuItem.Separator,
+            new TrayMenuItem("Settings and shortcuts…", () => Dispatcher.BeginInvoke(() => { ShowEditor(); OnSettings(this, new RoutedEventArgs()); })),
             TrayMenuItem.Separator,
             new TrayMenuItem("Quit SnagItOpen", () => Dispatcher.BeginInvoke(ExitApplication)),
         ], ShowEditor);
@@ -164,9 +167,65 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(gesture)) { _hotkeys.Bind(name, null); continue; }
             if (!HotkeyGesture.TryParse(gesture, out var g)) { problems.Add($"{name}: '{gesture}' is not a valid shortcut."); continue; }
             var r = _hotkeys.Bind(name, g);
+            if (!r.IsSuccess && name == HotkeyActions.Region && g.Modifiers == ModifierKeys.None && g.Key == Key.Snapshot
+                && HotkeyGesture.TryParse("Ctrl+PrintScreen", out var alt) && _hotkeys.Bind(name, alt).IsSuccess)
+            {
+                // Windows 11 can reserve PrintScreen for Snipping Tool; fall back without losing the capture key.
+                problems.Add("PrintScreen is taken by Windows (Settings > Accessibility > Keyboard > \"Use the Print screen key to open screen capture\"). Region capture uses Ctrl+PrintScreen instead.");
+                continue;
+            }
             if (!r.IsSuccess) problems.Add($"{name}: {r.Message}");
         }
-        if (problems.Count > 0) _vm.Status = "Some hotkeys are unavailable: " + string.Join(" ", problems);
+        LastHotkeyProblems = problems;
+        if (problems.Count > 0)
+        {
+            _vm.Status = "Hotkeys: " + string.Join(" ", problems);
+            if (!IsVisible) _tray?.ShowBalloon("SnagItOpen hotkeys", string.Join(" ", problems));
+        }
+    }
+
+    public IReadOnlyList<string> LastHotkeyProblems { get; private set; } = [];
+
+    /// <summary>Starts with no visible window: creates the window handle (hotkeys, tray) without showing it.</summary>
+    public void StartInTray()
+    {
+        new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
+        if (_tray is null) CreateTray();
+        var region = ActiveHotkeys.TryGetValue(HotkeyActions.Region, out var rg) ? rg.ToString() : "the tray menu";
+        _tray?.ShowBalloon("SnagItOpen is running", $"Press {region} to capture a region.");
+        _trayHintShown = true;
+    }
+
+    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+    /// <summary>Adds or removes the per-user "run at sign-in" entry (no admin rights needed).</summary>
+    public static bool ApplyStartWithWindows(bool enable, out string? error)
+    {
+        error = null;
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RunKey, writable: true);
+            if (enable)
+            {
+                var exe = Environment.ProcessPath;
+                if (exe is null || !exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) { error = "Could not find SnagItOpen.exe."; return false; }
+                key.SetValue("SnagItOpen", $"\"{exe}\" --tray");
+            }
+            else key.DeleteValue("SnagItOpen", throwOnMissingValue: false);
+            return true;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    /// <summary>Releases every global hotkey (while the Settings window records new shortcuts).</summary>
+    public void SuspendHotkeys()
+    {
+        if (_hotkeys is null) return;
+        foreach (var name in _hotkeys.Bindings.Keys.ToList()) _hotkeys.Bind(name, null);
     }
 
     public IReadOnlyDictionary<string, HotkeyGesture> ActiveHotkeys =>
@@ -231,7 +290,8 @@ public partial class MainWindow : Window
         {
             e.Cancel = true;
             Hide();
-            if (!_trayHintShown) { _tray.ShowBalloon("SnagItOpen is still running", "Use the tray icon or hotkeys to capture. Choose Quit from the tray menu to exit."); _trayHintShown = true; }
+            var region = ActiveHotkeys.TryGetValue(HotkeyActions.Region, out var rg) ? rg.ToString() : "the tray menu";
+            if (!_trayHintShown) { _tray.ShowBalloon("SnagItOpen is still running", $"Press {region} to capture a region. Right-click the tray icon and choose Quit to exit."); _trayHintShown = true; }
             return;
         }
         if (!ConfirmDiscard()) { e.Cancel = true; _exiting = false; return; }
@@ -645,11 +705,95 @@ public partial class MainWindow : Window
 
     // ================================================================== drag & drop
 
+    // ------------------------------------------------------------------ drag the finished image out
+
+    private Point _dragOutStart;
+    private bool _dragOutArmed, _dragOutBusy;
+
+    private void OnDragOutDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragOutStart = e.GetPosition(this);
+        _dragOutArmed = true;
+    }
+
+    private async void OnDragOutMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragOutArmed || e.LeftButton != MouseButtonState.Pressed) { _dragOutArmed = false; return; }
+        var p = e.GetPosition(this);
+        if (Math.Abs(p.X - _dragOutStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(p.Y - _dragOutStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        _dragOutArmed = false;
+        if (_dragOutBusy) return;
+        _dragOutBusy = true;
+        try
+        {
+            var data = await BuildDragOutDataAsync();
+            if (data is null) return;
+            // Our own window must not accept its own export.
+            _ignoreSelfDrop = true;
+            try { DragDrop.DoDragDrop(DragOutHandle, data, DragDropEffects.Copy); }
+            finally { _ignoreSelfDrop = false; }
+        }
+        finally { _dragOutBusy = false; }
+    }
+
+    private async void OnDragOutKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space)) return;
+        e.Handled = true;
+        await _vm.CopyImageAsync();
+    }
+
+    private bool _ignoreSelfDrop;
+
+    /// <summary>Renders the export area to a PNG in the app temp folder and wraps it as file + PNG + bitmap data.</summary>
+    private async Task<DataObject?> BuildDragOutDataAsync()
+    {
+        if (!_vm.HasContent) { _vm.Status = "Nothing to drag yet."; return null; }
+        try
+        {
+            var px = await _services.Export.RenderAsync(_vm.Document);
+            var png = await _services.Imaging.InvokeAsync(px.EncodePng);
+            var bg = _vm.Document.Background.A == 255 ? _vm.Document.Background : Rgba32.White;
+            var opaque = await _services.Imaging.InvokeAsync(() => px.FlattenOnto(bg).ToBitmap());
+            var dir = Path.Combine(_services.Paths.Temp, "dragout");
+            Directory.CreateDirectory(dir);
+            CleanupDragOut(dir);
+            var baseName = _vm.ProjectPath is { } pp ? Path.GetFileNameWithoutExtension(pp) : "SnagItOpen " + DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss");
+            foreach (var c in Path.GetInvalidFileNameChars()) baseName = baseName.Replace(c, '_');
+            var file = Path.Combine(dir, baseName + ".png");
+            await File.WriteAllBytesAsync(file, png);
+            var data = new DataObject();
+            data.SetFileDropList(new System.Collections.Specialized.StringCollection { file });
+            data.SetData("PNG", new MemoryStream(png), autoConvert: false);
+            data.SetImage(opaque);
+            _vm.Status = $"Dragging {px.Width} × {px.Height} image.";
+            return data;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or OutOfMemoryException)
+        {
+            _vm.Status = "Could not prepare the image: " + ex.Message;
+            return null;
+        }
+    }
+
+    /// <summary>Deletes drag-out files older than a day (targets usually copy the file on drop).</summary>
+    private static void CleanupDragOut(string dir)
+    {
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(dir, "*.png"))
+                if (File.GetLastWriteTimeUtc(f) < DateTime.UtcNow.AddDays(-1)) File.Delete(f);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
     private static string[] DroppedFiles(DragEventArgs e) =>
         e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] f ? f : [];
 
     private void OnWindowDragOver(object sender, DragEventArgs e)
     {
+        if (_ignoreSelfDrop) { e.Effects = DragDropEffects.None; e.Handled = true; return; }
         e.Effects = e.Data.GetDataPresent(CaptureDrag.Format) || DroppedFiles(e).Length > 0 ? DragDropEffects.Copy
             : e.Data.GetDataPresent(ImageIdFormat) ? DragDropEffects.Move : DragDropEffects.None;
         e.Handled = true;
@@ -657,6 +801,7 @@ public partial class MainWindow : Window
 
     private async void OnWindowDrop(object sender, DragEventArgs e)
     {
+        if (_ignoreSelfDrop) { e.Handled = true; return; }
         // Recent captures (from the strip or the library window) are already stored assets: add directly.
         if (CaptureDrag.Read(e.Data) is { } captures)
         {

@@ -53,7 +53,10 @@ public partial class App : Application
         _services.Retention.AddOwner(vm.ProtectedAssets);
         var window = new MainWindow(_services, vm, capture);
         MainWindow = window;
-        window.Show();
+        // "--tray" (used by Start with Windows) starts hidden: hotkeys and the tray icon work, no window.
+        bool startHidden = e.Args.Any(a => string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)) && fullFile is null;
+        if (startHidden) window.StartInTray();
+        else window.Show();
 
         foreach (var w in _services.StartupWarnings) vm.Status = w;
         OfferRecovery(vm, window);

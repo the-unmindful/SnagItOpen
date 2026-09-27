@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Media;
 using SnagItOpen.App.Infrastructure;
 using SnagItOpen.Core.Capture;
 using SnagItOpen.Storage.Settings;
@@ -24,7 +25,9 @@ internal sealed class SettingsWindow : Window
     private readonly TextBox _jpeg = new();
     private readonly TextBox _maxCount = new();
     private readonly TextBox _maxMb = new();
-    private readonly Dictionary<string, TextBox> _hotkeys = new(StringComparer.Ordinal);
+    private readonly CheckBox _startWithWindows = new() { Content = "Start SnagItOpen in the tray when I sign in to Windows" };
+    private readonly Dictionary<string, HotkeyBox> _hotkeys = new(StringComparer.Ordinal);
+    private readonly TextBlock _hotkeyStatus = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Firebrick, Margin = new Thickness(0, 4, 0, 0) };
 
     public SettingsWindow(AppServices services)
     {
@@ -45,6 +48,10 @@ internal sealed class SettingsWindow : Window
         _tray.IsChecked = s.ShowTrayIcon;
         _closeToTray.IsChecked = s.CloseToTray;
         _snap.IsChecked = s.SnapEnabled;
+        _startWithWindows.IsChecked = s.StartWithWindows;
+        // Registered hotkeys would swallow the keys being recorded; release them while this window is open.
+        if (Application.Current.MainWindow is MainWindow owner) owner.SuspendHotkeys();
+        Closed += (_, _) => { if (Application.Current.MainWindow is MainWindow m) m.ApplyHotkeys(); };
         _jpeg.Text = s.JpegQuality.ToString();
         _maxCount.Text = s.HistoryMaxCount.ToString();
         _maxMb.Text = s.HistoryMaxMegabytes.ToString();
@@ -57,19 +64,42 @@ internal sealed class SettingsWindow : Window
         panel.Children.Add(_copyAfter);
         panel.Children.Add(_history);
 
-        panel.Children.Add(Header("Global hotkeys (e.g. Ctrl+Shift+1, PrintScreen; empty = none)"));
+        panel.Children.Add(Header("Global shortcuts (work anywhere while SnagItOpen runs in the tray)"));
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Click a box and press the keys. Backspace or ✕ clears it. Hotkeys are paused while this window is open.",
+            TextWrapping = TextWrapping.Wrap, Opacity = 0.75, Margin = new Thickness(0, 0, 0, 4),
+        });
         foreach (var action in HotkeyActions.All)
         {
-            var box = new TextBox { Text = s.GestureFor(action) };
-            _hotkeys[action] = box;
-            panel.Children.Add(Row(action switch
+            string label = action switch
             {
+                HotkeyActions.Region => "Capture region",
+                HotkeyActions.Window => "Capture window",
                 HotkeyActions.AppendRegion => "Append region",
                 HotkeyActions.FullScreen => "All monitors",
                 HotkeyActions.LastRegion => "Last region",
+                HotkeyActions.Scrolling => "Scrolling capture",
                 _ => action,
-            }, box));
+            };
+            var box = new HotkeyBox(s.GestureFor(action), label);
+            box.Changed += ValidateHotkeys;
+            _hotkeys[action] = box;
+            panel.Children.Add(Row(label, box));
         }
+        var hkButtons = new WrapPanel { Margin = new Thickness(180, 4, 0, 0) };
+        var defaults = new Button { Content = "Restore default shortcuts", Padding = new Thickness(8, 2, 8, 2) };
+        defaults.Click += (_, _) =>
+        {
+            foreach (var d in AppSettings.DefaultHotkeys())
+                if (_hotkeys.TryGetValue(d.Action, out var b)) ReplaceBox(d.Action, d.Gesture);
+            ValidateHotkeys();
+        };
+        hkButtons.Children.Add(defaults);
+        panel.Children.Add(hkButtons);
+        panel.Children.Add(_hotkeyStatus);
+        if (Application.Current.MainWindow is MainWindow mw && mw.LastHotkeyProblems.Count > 0)
+            _hotkeyStatus.Text = "Currently: " + string.Join(" ", mw.LastHotkeyProblems);
 
         panel.Children.Add(Header("Output and library"));
         panel.Children.Add(Row("JPEG quality (1–100)", _jpeg));
@@ -79,6 +109,7 @@ internal sealed class SettingsWindow : Window
         panel.Children.Add(Header("Application"));
         panel.Children.Add(_tray);
         panel.Children.Add(_closeToTray);
+        panel.Children.Add(_startWithWindows);
         panel.Children.Add(_snap);
 
         var folder = new Button { Content = "Open data folder", Padding = new Thickness(8, 3, 8, 3), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0) };
@@ -99,9 +130,32 @@ internal sealed class SettingsWindow : Window
         Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = SystemParameters.WorkArea.Height * 0.9 };
     }
 
+    /// <summary>Replaces one recorder (used by "Restore defaults").</summary>
+    private void ReplaceBox(string action, string gesture)
+    {
+        var old = _hotkeys[action];
+        if (old.Parent is not Grid g) return;
+        var label = (g.Children[0] as Label)?.Content as string ?? action;
+        var box = new HotkeyBox(gesture, label);
+        box.Changed += ValidateHotkeys;
+        Grid.SetColumn(box, 1);
+        g.Children.Remove(old);
+        g.Children.Add(box);
+        _hotkeys[action] = box;
+    }
+
+    /// <summary>Flags duplicates as you record.</summary>
+    private void ValidateHotkeys()
+    {
+        var dup = _hotkeys.Where(kv => kv.Value.Gesture.Length > 0)
+            .GroupBy(kv => kv.Value.Gesture, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key} is used twice.").ToList();
+        _hotkeyStatus.Text = string.Join(" ", dup);
+    }
+
     private static TextBlock Header(string t) => new() { Text = t, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 10, 0, 4), TextWrapping = TextWrapping.Wrap };
 
-    private static FrameworkElement Row(string label, Control c)
+    private static FrameworkElement Row(string label, FrameworkElement c)
     {
         var g = new Grid { Margin = new Thickness(0, 2, 0, 2) };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
@@ -131,7 +185,7 @@ internal sealed class SettingsWindow : Window
         var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (action, box) in _hotkeys)
         {
-            var text = box.Text.Trim();
+            var text = box.Gesture;
             if (text.Length == 0) { s = s.WithHotkey(action, ""); continue; }
             if (!HotkeyGesture.TryParse(text, out var g)) { errors.Add($"'{text}' is not a valid hotkey (use a modifier plus a key, e.g. Ctrl+Shift+5)."); continue; }
             var canonical = g.ToString();
@@ -150,11 +204,17 @@ internal sealed class SettingsWindow : Window
             SaveCapturesToHistory = _history.IsChecked == true,
             ShowTrayIcon = _tray.IsChecked == true,
             CloseToTray = _closeToTray.IsChecked == true && _tray.IsChecked == true,
+            StartWithWindows = _startWithWindows.IsChecked == true,
             SnapEnabled = _snap.IsChecked == true,
             JpegQuality = jpeg,
             HistoryMaxCount = count,
             HistoryMaxMegabytes = mb,
         };
+        if (s.StartWithWindows != _services.Settings.StartWithWindows && !MainWindow.ApplyStartWithWindows(s.StartWithWindows, out var err))
+        {
+            Dialogs.Error(this, $"Could not change Start with Windows: {err}");
+            s = s with { StartWithWindows = _services.Settings.StartWithWindows };
+        }
         _services.SaveSettings(s);
         DialogResult = true;
     }

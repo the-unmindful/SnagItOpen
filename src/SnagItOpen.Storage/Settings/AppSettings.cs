@@ -25,11 +25,15 @@ public enum OutsideCanvasMode { Dim, Show, Hide }
 /// <summary>Persisted user preferences (settings.json).</summary>
 public sealed record AppSettings
 {
-    public int Version { get; init; } = 1;
+    public const int CurrentVersion = 2;
+    public int Version { get; init; } = CurrentVersion;
     public int CaptureDelaySeconds { get; init; }
     public bool IncludeCursor { get; init; }
     public CaptureDestination DefaultDestination { get; init; } = CaptureDestination.AppendBelow;
-    public bool CloseToTray { get; init; }
+    /// <summary>Closing the editor hides it; SnagItOpen keeps running in the tray with its hotkeys.</summary>
+    public bool CloseToTray { get; init; } = true;
+    /// <summary>Start SnagItOpen hidden in the tray when you sign in to Windows.</summary>
+    public bool StartWithWindows { get; init; }
     public bool ShowTrayIcon { get; init; } = true;
     public bool CopyAfterCapture { get; init; }
     public bool SnapEnabled { get; init; } = true;
@@ -48,7 +52,7 @@ public sealed record AppSettings
 
     public static HotkeyBinding[] DefaultHotkeys() =>
     [
-        new(HotkeyActions.Region, "Ctrl+Shift+1"),
+        new(HotkeyActions.Region, "PrintScreen"),
         new(HotkeyActions.Window, "Ctrl+Shift+2"),
         new(HotkeyActions.AppendRegion, "Ctrl+Shift+3"),
         new(HotkeyActions.FullScreen, "Ctrl+Shift+4"),
@@ -66,7 +70,23 @@ public sealed record AppSettings
     };
 
     /// <summary>Clamps every value into its valid range; unknown actions are dropped.</summary>
-    public AppSettings Sanitize()
+    public AppSettings Sanitize() => Migrate().SanitizeCore();
+
+    /// <summary>
+    /// Version 1 → 2: region capture moves to PrintScreen (only if it was still the old default) and
+    /// closing the editor keeps the app in the tray.
+    /// </summary>
+    private AppSettings Migrate()
+    {
+        if (Version >= CurrentVersion) return this;
+        var s = this with { Version = CurrentVersion, CloseToTray = true, Hotkeys = Hotkeys ?? DefaultHotkeys() };
+        if (string.Equals(s.GestureFor(HotkeyActions.Region), "Ctrl+Shift+1", StringComparison.OrdinalIgnoreCase)
+            && !(s.Hotkeys ?? []).Any(h => h is not null && string.Equals(h.Gesture, "PrintScreen", StringComparison.OrdinalIgnoreCase)))
+            s = s.WithHotkey(HotkeyActions.Region, "PrintScreen");
+        return s;
+    }
+
+    private AppSettings SanitizeCore()
     {
         var hk = (Hotkeys ?? []).Where(h => h is not null && HotkeyActions.All.Contains(h.Action))
             .GroupBy(h => h.Action).Select(g => g.First() with { Gesture = g.First().Gesture ?? "" }).ToList();

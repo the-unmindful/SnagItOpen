@@ -222,6 +222,13 @@
                     <TextBlock Text="Outside:" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <ComboBox x:Name="OutsideBox" Width="70" Margin="0,0,10,0" AutomationProperties.Name="Show content outside the canvas" SelectionChanged="OnOutsideMode"
                               ToolTip="How content outside a locked canvas looks while editing (it is never exported)" />
+                    <Border x:Name="DragOutHandle" BorderBrush="#FF0078D7" BorderThickness="1" CornerRadius="3" Background="#FFE8F1FB"
+                            Padding="8,1" Margin="0,0,10,0" Cursor="Hand" Focusable="True" KeyboardNavigation.IsTabStop="True"
+                            AutomationProperties.Name="Drag the finished image into another application. Press Enter to copy it instead."
+                            ToolTip="Drag the finished image into another app (Explorer, chat, email, Word…). Press Enter to copy it."
+                            PreviewMouseLeftButtonDown="OnDragOutDown" PreviewMouseMove="OnDragOutMove" KeyDown="OnDragOutKey">
+                        <TextBlock Text="⇱ Drag out" VerticalAlignment="Center" Foreground="#FF0063B1" />
+                    </Border>
                     <Button x:Name="OutsideWarning" Content="⚠ Content outside canvas: Fit" Padding="6,1" Visibility="Collapsed" Click="OnFitCanvas"
                             ToolTip="Some content lies outside the locked canvas and will be cut off. Click to fit the canvas to all content." />
                 </WrapPanel>
