@@ -488,6 +488,8 @@ public partial class MainWindow : Window
             case Key.S when ctrl && shift: OnSaveAs(this, e); break;
             case Key.S when ctrl: OnSave(this, e); break;
             case Key.E when ctrl: OnExport(this, e); break;
+            case Key.C when ctrl && mods.HasFlag(ModifierKeys.Alt): _vm.CopyStyle(); break;
+            case Key.V when ctrl && mods.HasFlag(ModifierKeys.Alt): _vm.PasteStyle(); break;
             case Key.C when ctrl && shift: OnCopy(this, e); break;
             case Key.C when ctrl && _vm.SelectedAnnotations.Count > 0: CopyAnnotationsToClipboard(); break;
             case Key.C when ctrl: OnCopy(this, e); break;

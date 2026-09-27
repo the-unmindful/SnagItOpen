@@ -559,15 +559,47 @@ public sealed class EditorViewModel : ObservableObject
             Select([], ids);
     }
 
+    /// <summary>Remembers the look of the (first) selected annotation for Paste style.</summary>
     public void CopyStyle()
     {
-        if (PrimaryAnnotation is { } a) { _styleClipboard = a; Status = $"Copied {a.Kind.ToLowerInvariant()} style."; }
+        var a = PrimaryAnnotation ?? SelectedAnnotationObjects.FirstOrDefault();
+        if (a is null) { Status = "Select an annotation to copy its style."; return; }
+        _styleClipboard = a;
+        Status = $"Copied {a.Kind.ToLowerInvariant()} style. Select items and press Ctrl+Alt+V to paste it.";
+        OnPropertyChanged(nameof(HasStyleClipboard));
     }
 
+    /// <summary>
+    /// Applies the copied look to every selected annotation. Items of the same kind get every style property;
+    /// other kinds get colour, width, opacity and shadow. Geometry, text and numbers are kept. One undo step.
+    /// </summary>
     public void PasteStyle()
     {
-        if (_styleClipboard is not { } s || _selectedAnnotations.Count == 0) return;
-        UpdateSelectedAnnotations(a => AnnotationStyle.Transfer(s, a), "Paste style");
+        if (_styleClipboard is not { } s) { Status = "Copy a style first (Ctrl+Alt+C)."; return; }
+        var targets = SelectedAnnotationObjects.Where(a => a.Id != s.Id).ToList();
+        if (targets.Count == 0) { Status = "Select the items to restyle, then paste the style."; return; }
+        int same = targets.Count(a => a.GetType() == s.GetType());
+        if (Commit(targets.Count == 1 ? "Paste style" : $"Paste style to {targets.Count} items",
+                d => DocumentOps.UpdateAnnotations(d, targets.Select(t => t.Id).ToArray(), a => AnnotationStyle.Transfer(s, a))))
+            Status = same == targets.Count
+                ? $"Pasted {s.Kind.ToLowerInvariant()} style to {targets.Count} item(s)."
+                : $"Pasted style: {same} matching item(s) fully, {targets.Count - same} other item(s) colour, width, opacity and shadow only.";
+    }
+
+    /// <summary>Makes the selected annotation's look the default for new items of its kind.</summary>
+    public void SetAsDefaultStyle()
+    {
+        var a = PrimaryAnnotation ?? SelectedAnnotationObjects.FirstOrDefault();
+        if (a is null) { Status = "Select an annotation first."; return; }
+        _services.AnnotationStyles.SetPrototype(a.Kind, a);
+        Status = $"New {a.Kind.ToLowerInvariant()} items will now use this style.";
+    }
+
+    /// <summary>Restores the built-in default look for a tool kind.</summary>
+    public void ResetDefaultStyle(string kind)
+    {
+        if (AnnotationStyle.DefaultPrototype(kind) is { } p) _services.AnnotationStyles.SetPrototype(kind, p);
+        Status = $"{kind} tool reset to its built-in style.";
     }
 
     public void SetLocked(bool locked)

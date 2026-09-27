@@ -525,10 +525,16 @@ public sealed class CanvasView : FrameworkElement
         e.Handled = true;
     }
 
+    // Ctrl/Shift+click on an already-selected item removes it, but only if the press did not become a drag.
+    private (Guid Id, bool IsImage)? _deferToggle;
+    private Guid[] _dupAnnIds = [], _dupImgIds = [];
+
     private void BeginSelect(DocumentState doc, Point p)
     {
         var vm = _vm!;
-        bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        _deferToggle = null;
+        // Ctrl or Shift adds to / removes from the selection (Ctrl+drag also duplicates).
+        bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
         // Handles of the single selected item take priority.
         if (vm.SelectedImages.Count == 1 && vm.SelectedAnnotations.Count == 0 && vm.SelectedLayer is { } sel &&
@@ -580,13 +586,21 @@ public sealed class CanvasView : FrameworkElement
         var img = ann is null ? DocumentOps.HitTestImage(doc, _downDoc) : null;
         if (ann is not null)
         {
-            if (ctrl) vm.Select(vm.SelectedImages, Toggle(vm.SelectedAnnotations, ann.Id));
+            if (ctrl)
+            {
+                if (vm.SelectedAnnotations.Contains(ann.Id)) _deferToggle = (ann.Id, false);
+                else vm.Select(vm.SelectedImages, vm.SelectedAnnotations.Append(ann.Id));
+            }
             else if (!vm.SelectedAnnotations.Contains(ann.Id)) vm.Select([], [ann.Id]);
             _drag = Drag.Move;
         }
         else if (img is not null)
         {
-            if (ctrl) vm.ToggleImage(img.Id);
+            if (ctrl)
+            {
+                if (vm.SelectedImages.Contains(img.Id)) _deferToggle = (img.Id, true);
+                else vm.Select(vm.SelectedImages.Append(img.Id), vm.SelectedAnnotations);
+            }
             else if (!vm.SelectedImages.Contains(img.Id)) vm.Select([img.Id]);
             _drag = Drag.Move;
         }
@@ -645,8 +659,25 @@ public sealed class CanvasView : FrameworkElement
                 {
                     double dx = _curDoc.X - _downDoc.X, dy = _curDoc.Y - _downDoc.Y;
                     if (Math.Abs(p.X - _downView.X) < 2 && Math.Abs(p.Y - _downView.Y) < 2) return;
+                    _deferToggle = null; // it is a drag now, not a click
                     (dx, dy) = Snap(baseDoc, dx, dy, alt);
                     int ix = (int)Math.Round(dx), iy = (int)Math.Round(dy);
+                    if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                    {
+                        // Ctrl+drag: leave the originals and drag copies (release Ctrl mid-drag to move instead).
+                        Cursor = Cursors.Cross;
+                        TryPreview(d =>
+                        {
+                            var (d1, imgs) = _vm.SelectedImages.Count > 0 ? DocumentOps.Duplicate(d, _vm.SelectedImages, ix, iy) : (d, []);
+                            var (d2, anns) = _vm.SelectedAnnotations.Count > 0 ? DocumentOps.DuplicateAnnotations(d1, _vm.SelectedAnnotations, ix, iy) : (d1, []);
+                            _dupImgIds = imgs; _dupAnnIds = anns;
+                            return d2;
+                        });
+                        _vm.Status = "Release to drop copies (Ctrl+drag duplicates).";
+                        return;
+                    }
+                    _dupImgIds = []; _dupAnnIds = [];
+                    Cursor = null;
                     var movable = _vm.SelectedAnnotations.Where(id => baseDoc.FindAnnotation(id) is { Locked: false }).ToHashSet();
                     TryPreview(d => DocumentOps.Move(d, _vm.SelectedImages, movable, ix, iy));
                     return;
@@ -753,7 +784,25 @@ public sealed class CanvasView : FrameworkElement
         switch (drag)
         {
             case Drag.Move:
-                if (preview is not null) _vm.Commit("Move", _ => preview);
+                if (_deferToggle is { } dt)
+                {
+                    // Ctrl/Shift+click (no drag) on a selected item: remove it from the selection.
+                    if (dt.IsImage) _vm.Select(_vm.SelectedImages.Where(i => i != dt.Id), _vm.SelectedAnnotations);
+                    else _vm.Select(_vm.SelectedImages, _vm.SelectedAnnotations.Where(i => i != dt.Id));
+                }
+                else if (preview is not null && (_dupAnnIds.Length > 0 || _dupImgIds.Length > 0))
+                {
+                    var (ai, ii) = (_dupAnnIds, _dupImgIds);
+                    int n = ai.Length + ii.Length;
+                    if (_vm.Commit(n == 1 ? "Duplicate" : $"Duplicate {n} items", _ => preview))
+                    {
+                        _vm.Select(ii, ai);
+                        _vm.Status = n == 1 ? "Duplicated." : $"Duplicated {n} items.";
+                    }
+                }
+                else if (preview is not null) _vm.Commit("Move", _ => preview);
+                _deferToggle = null; _dupAnnIds = []; _dupImgIds = [];
+                Cursor = null;
                 break;
             case Drag.Resize:
                 if (preview is not null) _vm.Commit("Resize", _ => preview);
@@ -815,8 +864,8 @@ public sealed class CanvasView : FrameworkElement
         if (r.Width * _view.Zoom < 3 && r.Height * _view.Zoom < 3) return;
         var doc = _vm!.Document;
         var imgs = doc.Images.Where(i => i.Visible && Intersects(i.Bounds.ToRectD(), r)).Select(i => i.Id);
-        var anns = doc.Annotations.Where(a => Intersects(AnnotationDocBounds(doc, a), r)).Select(a => a.Id);
-        bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        var anns = doc.Annotations.Where(a => !a.Hidden && Intersects(AnnotationDocBounds(doc, a), r)).Select(a => a.Id);
+        bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         _vm.Select(ctrl ? _vm.SelectedImages.Concat(imgs) : imgs, ctrl ? _vm.SelectedAnnotations.Concat(anns) : anns);
     }
 

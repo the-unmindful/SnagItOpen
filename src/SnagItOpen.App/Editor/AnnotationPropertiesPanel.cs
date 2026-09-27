@@ -119,6 +119,7 @@ internal sealed class AnnotationPropertiesPanel : StackPanel
                 Section("Shape", () => BuildShape(a)); break;
         }
         if (_targets.Count > 0) Section("Arrange", () => BuildArrange(a));
+        Section("Defaults & style", () => BuildDefaults(a));
         if (!redaction) Section("Quick styles", () => BuildQuickStyles(a));
     }
 
@@ -446,6 +447,25 @@ internal sealed class AnnotationPropertiesPanel : StackPanel
             _into.Children.Add(Row("Distribute", Pair(Button("↔ Across", () => _vm.Distribute(true), "Equal horizontal spacing"),
                 Button("↕ Down", () => _vm.Distribute(false), "Equal vertical spacing"))));
         Check("Locked (can't be moved)", a.Locked, Mixed(x => x.Locked ? 1 : 0), v => (x => x with { Locked = v }), "Lock");
+    }
+
+    private void BuildDefaults(Annotation a)
+    {
+        var wrap = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
+        if (_targets.Count > 0)
+        {
+            wrap.Children.Add(Button("★ Set as default", () => { _vm.SetAsDefaultStyle(); Refresh(); },
+                $"New {a.Kind.ToLowerInvariant()} items will look like this one"));
+            wrap.Children.Add(Button("Copy style", _vm.CopyStyle, "Copy this look (Ctrl+Alt+C)"));
+            if (_vm.HasStyleClipboard)
+                wrap.Children.Add(Button("Paste style", () => { _vm.PasteStyle(); Refresh(); }, "Apply the copied look to the selection (Ctrl+Alt+V)"));
+        }
+        wrap.Children.Add(Button("↺ Reset default", () => { _vm.ResetDefaultStyle(a.Kind); Refresh(); },
+            $"Restore the built-in look for new {a.Kind.ToLowerInvariant()} items"));
+        _into.Children.Add(wrap);
+        Hint(_targets.Count > 0
+            ? "Set as default: new items of this kind start with this look. With no selection, the panel edits the tool default directly."
+            : "You are editing the default for new items. Changes here apply to the next items you draw.");
     }
 
     private void BuildQuickStyles(Annotation a)

@@ -119,15 +119,20 @@ public static class DocumentOps
         doc.Assets.Any(a => a.Id == asset.Id) ? doc : doc with { Assets = [.. doc.Assets, asset] };
 
     /// <summary>Duplicates image layers (same asset, new ID, +16px offset). Annotations are not duplicated.</summary>
-    public static (DocumentState Doc, Guid[] NewIds) Duplicate(DocumentState doc, IReadOnlyCollection<Guid> ids)
+    public static (DocumentState Doc, Guid[] NewIds) Duplicate(DocumentState doc, IReadOnlyCollection<Guid> ids) =>
+        Duplicate(doc, ids, DuplicateOffset, DuplicateOffset);
+
+    /// <summary>Duplicates image layers at an explicit offset (drag-duplicate). Switches to Free so copies stay put.</summary>
+    public static (DocumentState Doc, Guid[] NewIds) Duplicate(DocumentState doc, IReadOnlyCollection<Guid> ids, int dx, int dy)
     {
+        if (ids.Count > 0 && doc.Layout.Mode != LayoutMode.Free) doc = doc with { Layout = doc.Layout with { Mode = LayoutMode.Free } };
         doc = AnnotationCanvas.Normalize(doc);
         var images = doc.Images.ToList();
         var order = doc.LayoutOrder.ToList();
         var created = new List<Guid>();
         foreach (var src in doc.Images.Where(i => ids.Contains(i.Id)))
         {
-            var copy = src with { Id = Guid.NewGuid(), Bounds = src.Bounds.Translate(DuplicateOffset, DuplicateOffset), Name = src.Name };
+            var copy = src with { Id = Guid.NewGuid(), Bounds = src.Bounds.Translate(dx, dy), Name = src.Name };
             images.Add(copy);
             int idx = order.IndexOf(src.Id);
             order.Insert(idx < 0 ? order.Count : idx + 1, copy.Id);
@@ -145,7 +150,8 @@ public static class DocumentOps
         var created = new List<Guid>();
         foreach (var a in doc.Annotations.Where(a => ids.Contains(a.Id)))
         {
-            var c = a.Offset(dx, dy) with { Id = Guid.NewGuid() };
+            // Copies are never locked or hidden, so the user can immediately work with them.
+            var c = a.Offset(dx, dy) with { Id = Guid.NewGuid(), Locked = false, Hidden = false };
             anns.Add(c);
             created.Add(c.Id);
         }
