@@ -1,6 +1,6 @@
 # SnagItOpen hand-off
 
-Read this first in any new session. Last updated 2026-09-30. Local branch `master` tracks `origin/main` on https://github.com/the-unmindful/SnagItOpen (pushed at merge `c410a1a`).
+Read this first in any new session. Last updated 2026-10-01. Local branch `master` tracks `origin/main` on https://github.com/the-unmindful/SnagItOpen (pushed at merge `c410a1a`). **UI/UX upgrade work happens on local branch `ui-upgrade`** (user's instruction: not on `master`). Check `git branch` first and switch to `ui-upgrade` if needed.
 
 ## 1. What this is
 
@@ -27,6 +27,19 @@ A local, offline Windows screenshot capture and image editor, similar to Snagit.
 - **Commits:** small, one per feature step, message style `Area: what changed`. Commit locally. Do not push unless the user asks. Remote `origin` is https://github.com/the-unmindful/SnagItOpen; local `master` pushes to remote `main` (`git push origin master:main`). The repo is MIT licensed (`LICENSE`, from GitHub's initial commit).
 - **Reinstall after changes the user wants to try:** `.\scripts\install.ps1` (options: `-StartWithWindows`, `-DesktopShortcut`, `-NoLaunch`). It installs to `%LOCALAPPDATA%\Programs\SnagItOpen` and needs no admin rights. Quit the running tray copy first.
 - `LF will be replaced by CRLF` warnings from git are harmless.
+
+### 2a. Technical learnings (mistakes not to repeat)
+
+- **WPF re-parenting crashes.** A `UIElement` can have only one logical/visual parent. Moving `Child` from one `Border` to another without first setting the old parent's `Child = null` throws `InvalidOperationException` ("Specified element is already the logical child of another element"). This was the colour picker crash (`be8b096`, `ColorPicker.cs` `_after.Child`). Detach first, or build a new element.
+- **Overlapping drawn text and XAML controls.** Text drawn in `CanvasView.OnRender` sits under XAML children and cannot reflow. The empty-canvas hint overlapped the start-card buttons (`c4f8325`). Put UI text in XAML, not in `OnRender`.
+- **Stale test results from parallel batches.** A build/test launched in the same tool batch as an edit can run first and report a pass on old code. Always edit, then verify in a later step.
+- **Edits silently not landing.** After several edits, check `git diff --stat`; an edit to a file that was not re-read after an earlier change can miss its anchor.
+- **Large files overflow the context.** `MainWindow.xaml.cs` is 1,500+ lines. Read it by range (Grep for the method, then read ~150 lines around it), and extract new classes instead of growing it. Write large new files in several chunks (create, then append with Edit) rather than one huge Write.
+- **Build locks.** A `SnagItOpen.exe` started from `bin\` locks the output DLLs and the build fails with MSB3027/MSB3021 copy errors. Stop the process first.
+- **PowerShell 5.1 quoting.** Use single quotes for literal strings with `$`; `git commit -m` with multi-line text is easiest via several `-m` arguments.
+- **Warnings are errors in practice.** The gate expects 0 warnings. Nullable warnings (CS8600-CS8625) are the usual ones in new code; fix them, don't suppress them.
+- **Resource dictionaries (UI upgrade).** Use `DynamicResource` for anything that must change with the theme; `StaticResource` is resolved once and will not follow a theme swap. A key missing from one theme dictionary only fails at runtime, so the token-parity test (U01) is the guard. Code-built UI must use `SetResourceReference`.
+- **WPF tests need STA.** Windows.Tests that create WPF objects must run on an STA thread (see existing helpers in the test project before writing a new one).
 
 ## 3. Solution layout
 
@@ -71,7 +84,7 @@ Done (all committed; see `git log --oneline`):
 - Empty-canvas start card (`MainWindow.xaml`, inside the canvas `Grid`): replaces the old drawn text that the buttons overlapped. Shows Capture region / Import / Paste buttons and a shortcuts list; the global hotkey labels come from the registered bindings (`UpdateStartCardKeys`). It is bound to `IsEmpty`, so it disappears as soon as anything is added. `CanvasView` now draws text only when content exists but is all hidden.
 
 Not yet done / next up:
-1. **UI/UX upgrade PRD (written 2026-09-30, awaiting user approval):** `docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md`. It covers the design system (themes, icons, shared controls), editor shell, canvas, inspector, capture overlay, feedback, dialogs, settings, library, pin, tray, accessibility and command palette as tasks U01–U40 (section 12). Phase B (template / quick-style gallery) is epic E4, tasks U22–U23. **Do not start any U task until the user approves the PRD and answers its section 11 open questions.** After approval, start with U01 and use the worker prompt in PRD section 13.
+1. **UI/UX upgrade PRD (approved by the user 2026-10-01):** `docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md`. It covers the design system (themes, icons, shared controls), editor shell, canvas, inspector, capture overlay, feedback, dialogs, settings, library, pin, tray, accessibility and command palette as tasks U01–U40 (section 12). Phase B (template / quick-style gallery) is epic E4, tasks U22–U23. The section 11 answers are recorded in the PRD: capture immediately on release by default (Adjust phase + action bar available via a setting), Copy is the primary button, tool rail by default with an optional Classic toolbar, fixed blue selection accent. Work through the tasks in the PRD's dependency order, one commit per task; ticked tasks in PRD section 12 are done.
 2. **Manual acceptance has never been run.** Nothing interactive has been verified by hand by the assistant. See `docs/ACCEPTANCE.md`, and the list in section 6.
 3. Not implemented by design so far: OCR; Windows.Graphics.Capture backend (GDI only); mixed-DPI and multi-monitor setups are untested.
 
@@ -91,5 +104,5 @@ Not yet done / next up:
 - `docs/BUILD.md`: build details.
 - `docs/superpowers/specs/2026-09-27-snagitopen-design.md`: original specification (note: its "linked annotations" section is superseded by section 4 above).
 - `docs/superpowers/plans/`: original plan and annotation-editing plan.
-- `docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md`: UI/UX upgrade PRD (tasks U01–U40, pending approval).
+- `docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md`: UI/UX upgrade PRD (tasks U01–U40, approved 2026-10-01).
 - `docs/ACCEPTANCE.md`, `docs/CAPABILITIES.md`, `docs/RESEARCH.md`, `docs/evidence/verification.md`.

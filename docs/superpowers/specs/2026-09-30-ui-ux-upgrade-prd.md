@@ -1,6 +1,6 @@
 # SnagItOpen UI/UX upgrade: product requirements (PRD)
 
-Date: 2026-09-30. Status: proposed, awaiting user approval. Approving this PRD also approves the plan for Phase B (template / quick-style gallery, epic E4), which `docs/HANDOFF.md` says must be planned and approved before it is built.
+Date: 2026-09-30. Status: **approved by the user on 2026-10-01**, with the section 11 answers recorded there. Work happens on branch `ui-upgrade`, not `master`. Approving this PRD also approves the plan for Phase B (template / quick-style gallery, epic E4), which `docs/HANDOFF.md` says must be planned and approved before it is built.
 
 Audience: a worker LLM (or developer) implementing one task at a time. Section 12 lists the tasks. Every task names its files, acceptance criteria and tests.
 
@@ -311,7 +311,7 @@ Requirement IDs (`R-Ex.n`) are referenced by the tasks in section 12.
 
 ### E6 Capture overlay
 
-- **R-E6.1 Two-phase selection.** Releasing the mouse no longer commits in Region, Ellipse and Aspect modes. It enters an **Adjust** phase with 8 resize handles and a move-by-drag body. Enter, a double-click inside, or an action-bar button commits. Esc returns to Idle (a second Esc cancels). A setting, "Capture immediately on release" (default **off**), restores today's behaviour for users who want one-step capture. Window, fixed-size and multi-region modes keep their current commit rules. Extend the `RegionSelection` state machine in Core with an `Adjusting` state and add tests for handle drags, clamping to the virtual desktop, aspect lock during adjust, and Esc semantics.
+- **R-E6.1 Two-phase selection.** Releasing the mouse no longer commits in Region, Ellipse and Aspect modes. It enters an **Adjust** phase with 8 resize handles and a move-by-drag body. Enter, a double-click inside, or an action-bar button commits. Esc returns to Idle (a second Esc cancels). A setting, "Capture immediately on release" (default **on**, per the user's answer in section 11), keeps today's one-step behaviour; turning it off enables the Adjust phase. Window, fixed-size and multi-region modes keep their current commit rules. Extend the `RegionSelection` state machine in Core with an `Adjusting` state and add tests for handle drags, clamping to the virtual desktop, aspect lock during adjust, and Esc semantics.
 - **R-E6.2 Action bar.** In the Adjust phase, a small toolbar appears beside the selection (below it, flipping above or inside when there is no room; never off-monitor). Buttons: **Edit** (default; the current destination), **Copy**, **Save…** (Save As with the last export folder), **Pin**, **Append** (below/right toggle), **Drag** (drag the result straight out), and **Cancel**. Each shows its key: Enter, Ctrl+C, Ctrl+S, P, A, (drag), Esc. It is excluded from capture like the countdown badge, and the actions map to the existing `CaptureDestination` routes plus `PinnedImageWindow`.
 - **R-E6.3 Pixel loupe.** A 120×120 DIP loupe near the cursor shows the frozen snapshot at 8× with a pixel grid and a centre-pixel box. Under it: physical coordinates `x, y`, the selection size, and the hex colour of the centre pixel. `C` copies the hex, and Shift+C copies `rgb(r, g, b)`. The loupe flips side at screen edges, hides while dragging the body, and can be toggled with `M` (the preference is remembered).
 - **R-E6.4 Keyboard precision.** In Idle, arrow keys move the cursor as today. In Adjust, arrows move the selection 1 px (Shift: 10); Ctrl+arrows grow or shrink the right/bottom edge; Ctrl+Shift+arrows move the left/top edge; Tab cycles which edge is active (with a highlighted edge). All values are physical pixels. This is Core-testable.
@@ -441,7 +441,12 @@ Requirement IDs (`R-Ex.n`) are referenced by the tasks in section 12.
 3. Is removing the top toolbars in favour of a tool rail acceptable, or should an optional "classic toolbar" view stay?
 4. Selection accent: fixed blue (proposed) or follow the Windows accent colour by default?
 
-Until the user answers, workers use the proposed defaults: two-phase capture, Copy as primary, no classic toolbar, fixed blue.
+**Answers (user, 2026-10-01). These override the proposals above and anywhere else in this PRD:**
+
+1. **Both behaviours, immediate capture is the default.** `CaptureOnRelease` defaults to **true** (today's one-step behaviour). The Adjust phase with the action bar is available by turning the setting off (Settings → Capture, "Capture immediately on release"). R-E6.1 and U28/U29 still build the Adjust phase in full; only the default changes.
+2. **Copy is the brand-red primary button** (as proposed).
+3. **Keep both layouts.** The tool rail is the default. A "Classic toolbar" option (View menu toggle and Settings → Appearance, persisted as `UiState.ClassicToolbar`, default off) shows the tools as a horizontal icon+text toolbar under the command bar instead of the rail. Both are built from `ToolCatalog`, so they never drift. U14 therefore keeps a tools toolbar (restyled, catalog-driven) behind the toggle instead of deleting it; the Band-0 toolbar, Arrange toolbar and canvas bar are still removed.
+4. **Fixed blue selection accent** (as proposed). "System accent" stays optional polish in U39.
 
 ## 12. Tasks
 
@@ -517,7 +522,7 @@ Each task is one session and one commit. "Deps" must be done first. "Done when" 
 
 - [ ] **U14 Remove old toolbars; panels and responsive layout.** Deps: U11, U12, U13, U15 (the canvas bar controls must already live in the inspector). Req: section 6 table, R-E1.8.
   Files: `MainWindow.xaml`, `MainWindow.xaml.cs`.
-  Do: delete the Band-0/Band-1 toolbars, the Arrange toolbar and the canvas bar; move the content-outside warning into an InfoBar; add collapse/flyout behaviour and persist panel state; finish F6 regions.
+  Do: delete the Band-0 toolbar, the Arrange toolbar and the canvas bar; replace the Band-1 tools toolbar with a catalog-driven "Classic toolbar" shown instead of the rail when `UiState.ClassicToolbar` is on (View menu toggle, section 11 answer 3); move the content-outside warning into an InfoBar; add collapse/flyout behaviour and persist panel state; finish F6 regions.
   Done when: the window works at 1280, 1000 and 800 DIP widths (manual); no handler is left orphaned (build has no unused-handler XAML errors; Grep each deleted `Click=` name).
 
 ### Milestone 4: inspector
