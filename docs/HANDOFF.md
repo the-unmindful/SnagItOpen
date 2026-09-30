@@ -1,6 +1,6 @@
 # SnagItOpen hand-off
 
-Read this first in any new session. Last updated 2026-09-27. Local branch `master` tracks `origin/main` on https://github.com/the-unmindful/SnagItOpen (pushed at merge `c410a1a`).
+Read this first in any new session. Last updated 2026-09-30. Local branch `master` tracks `origin/main` on https://github.com/the-unmindful/SnagItOpen (pushed at merge `c410a1a`).
 
 ## 1. What this is
 
@@ -71,7 +71,7 @@ Done (all committed; see `git log --oneline`):
 - Empty-canvas start card (`MainWindow.xaml`, inside the canvas `Grid`): replaces the old drawn text that the buttons overlapped. Shows Capture region / Import / Paste buttons and a shortcuts list; the global hotkey labels come from the registered bindings (`UpdateStartCardKeys`). It is bound to `IsEmpty`, so it disappears as soon as anything is added. `CanvasView` now draws text only when content exists but is all hidden.
 
 Not yet done / next up:
-1. **Phase B (user asked for it, not started): template / asset gallery.** A panel that drops down when a tool is picked, showing ready-made visual variants (e.g. arrow styles) to add with one click, plus add/delete/reorder of templates. Likely builds on `AnnotationStyleStore` quick styles and per-tool prototypes. **Plan first and get the user's approval before building.**
+1. **UI/UX upgrade PRD (written 2026-09-30, awaiting user approval):** `docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md`. It covers the design system (themes, icons, shared controls), editor shell, canvas, inspector, capture overlay, feedback, dialogs, settings, library, pin, tray, accessibility and command palette as tasks U01–U40 (section 12). Phase B (template / quick-style gallery) is epic E4, tasks U22–U23. **Do not start any U task until the user approves the PRD and answers its section 11 open questions.** After approval, start with U01 and use the worker prompt in PRD section 13.
 2. **Manual acceptance has never been run.** Nothing interactive has been verified by hand by the assistant. See `docs/ACCEPTANCE.md`, and the list in section 6.
 3. Not implemented by design so far: OCR; Windows.Graphics.Capture backend (GDI only); mixed-DPI and multi-monitor setups are untested.
 
@@ -91,4 +91,5 @@ Not yet done / next up:
 - `docs/BUILD.md`: build details.
 - `docs/superpowers/specs/2026-09-27-snagitopen-design.md`: original specification (note: its "linked annotations" section is superseded by section 4 above).
 - `docs/superpowers/plans/`: original plan and annotation-editing plan.
+- `docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md`: UI/UX upgrade PRD (tasks U01–U40, pending approval).
 - `docs/ACCEPTANCE.md`, `docs/CAPABILITIES.md`, `docs/RESEARCH.md`, `docs/evidence/verification.md`.
