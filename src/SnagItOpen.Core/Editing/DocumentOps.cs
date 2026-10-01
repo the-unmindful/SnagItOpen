@@ -151,7 +151,7 @@ public static class DocumentOps
         foreach (var a in doc.Annotations.Where(a => ids.Contains(a.Id)))
         {
             // Copies are never locked or hidden, so the user can immediately work with them.
-            var c = a.Offset(dx, dy) with { Id = Guid.NewGuid(), Locked = false, Hidden = false };
+            var c = a.Translate(dx, dy) with { Id = Guid.NewGuid(), Locked = false, Hidden = false };
             anns.Add(c);
             created.Add(c.Id);
         }
@@ -227,7 +227,7 @@ public static class DocumentOps
         var d = AnnotationCanvas.Normalize(doc);
         if (imageIds.Count > 0) d = ReplaceImages(EnsureFree(d), i => i with { Bounds = i.Bounds.Translate(dx, dy) }, imageIds);
         if (annotationIds.Count > 0)
-            d = d with { Annotations = d.Annotations.Select(a => annotationIds.Contains(a.Id) ? a.Offset(dx, dy) : a).ToArray() };
+            d = d with { Annotations = d.Annotations.Select(a => annotationIds.Contains(a.Id) ? a.Translate(dx, dy) : a).ToArray() };
         return Reflow(d);
     }
 
@@ -457,7 +457,7 @@ public static class DocumentOps
         return Reflow(doc with
         {
             Annotations = doc.Annotations.Select(a => map.TryGetValue(a.Id, out var m) && (Math.Abs(m.Dx) > 1e-9 || Math.Abs(m.Dy) > 1e-9)
-                ? a.Offset(m.Dx, m.Dy) : a).ToArray(),
+                ? a.Translate(m.Dx, m.Dy) : a).ToArray(),
         });
     }
 
@@ -465,7 +465,7 @@ public static class DocumentOps
     public static (DocumentState Doc, Guid[] NewIds) PasteAnnotations(DocumentState doc, IReadOnlyList<Annotation> items, double dx, double dy)
     {
         var copies = items.Where(a => a is not null)
-            .Select(a => a.Offset(dx, dy) with { Id = Guid.NewGuid(), ImageLayerId = null, Locked = false })
+            .Select(a => a.Translate(dx, dy) with { Id = Guid.NewGuid(), ImageLayerId = null, Locked = false })
             // Pasted stamps that reference an asset this document lacks become plain symbol stamps.
             .Select(a => a is StampAnnotation { AssetId: { } sid } st && doc.FindAsset(sid) is null ? st with { AssetId = null } : a)
             .ToArray();

@@ -74,6 +74,9 @@ public abstract record Annotation
     }
 
     public Annotation Offset(double dx, double dy) => MapGeometry(p => new PointD(p.X + dx, p.Y + dy));
+    /// <summary>A user move (drag, nudge, duplicate, paste). Same as <see cref="Offset"/> except where the
+    /// annotation has parts that must stay anchored to the document (a magnifier's source region).</summary>
+    public virtual Annotation Translate(double dx, double dy) => Offset(dx, dy);
 }
 
 public sealed record RectangleAnnotation : Annotation
@@ -346,6 +349,10 @@ public sealed record MagnifierAnnotation : Annotation
     public bool Circular { get; init; } = true;
     [JsonIgnore] public double Zoom => SourceRegion.Width > 0 ? Bounds.Width / SourceRegion.Width : 1;
     public override string Kind => "Magnifier";
+    /// <summary>Moving the lens keeps showing the same content: only the lens moves (F-MAG1).</summary>
+    public override Annotation Translate(double dx, double dy) => this with { Bounds = new RectD(Bounds.X + dx, Bounds.Y + dy, Bounds.Width, Bounds.Height) };
+    /// <summary>Moves or resizes what the lens shows; the lens stays put.</summary>
+    public MagnifierAnnotation WithSource(RectD source) => this with { SourceRegion = source };
 
     public override Annotation MapGeometry(Func<PointD, PointD> map)
     {

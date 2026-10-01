@@ -260,6 +260,12 @@ public sealed class AnnotationPropertiesPanel : StackPanel
                 break;
             case MagnifierAnnotation m:
                 Segmented("Lens", ["Round", "Square"], m.Circular ? 0 : 1, i => (x => x is MagnifierAnnotation y ? y with { Circular = i == 0 } : x), "Lens shape", ["Round lens", "Square lens"]);
+                // Zoom resizes the magnified area around its centre; the lens keeps its size and place (F-MAG3).
+                SliderRow("Zoom", Math.Round(m.Zoom, 1), 1, 8, 0.1, "0.0", Mixed(x => (x as MagnifierAnnotation)?.Zoom ?? 1), null,
+                    (x, v) => x is MagnifierAnnotation y && v > 0
+                        ? y.WithSource(new RectD(y.SourceRegion.Center.X - y.Bounds.Width / v / 2, y.SourceRegion.Center.Y - y.Bounds.Height / v / 2, y.Bounds.Width / v, y.Bounds.Height / v))
+                        : x, "×", 2, "Magnifier zoom");
+                if (_targets.Count == 1) Hint("Drag the lens to place it; its content stays the same. Drag inside the dashed outline to choose what is magnified, or its corners to zoom.");
                 if (_protoKind is not null)
                 {
                     var ts = _toolStyle(ToolKind.Magnifier);

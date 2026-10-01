@@ -53,7 +53,7 @@ public sealed class CanvasView : FrameworkElement
     private bool _fitPending = true;
 
     // gesture state
-    private enum Drag { None, Pan, Move, Resize, AnnHandle, Marquee, Draw, Freehand, Crop, CanvasEdge, CanvasMove }
+    private enum Drag { None, Pan, Move, Resize, AnnHandle, Marquee, Draw, Freehand, Crop, CanvasEdge, CanvasMove, MagSource }
     private PixelRect _canvasStart;
 
     /// <summary>How content outside a locked canvas is shown in the editor (never exported).</summary>
@@ -72,6 +72,7 @@ public sealed class CanvasView : FrameworkElement
     private Guid _resizeTarget;
     private AnnotationHandle _annHandle;
     private Annotation? _annStart;
+    private MagnifierAnnotation? _magStart; private ResizeHandle? _magCorner; // F-MAG2: source region drag (null corner = move)
     private Guid? _hover;
     private double? _angleLabel;
     private Guid? _drawLayer;
@@ -381,7 +382,11 @@ public sealed class CanvasView : FrameworkElement
         {
             if (doc.FindAnnotation(id) is not { } a) continue;
             DrawOutline(dc, a, AnnSelectionPen);
-            if (_vm.SelectedAnnotations.Count == 1 && _vm.SelectedImages.Count == 0 && Tool == ToolKind.Select) DrawAnnotationHandles(dc, a);
+            if (_vm.SelectedAnnotations.Count == 1 && _vm.SelectedImages.Count == 0 && Tool == ToolKind.Select)
+            {
+                if (a is MagnifierAnnotation mag) DrawMagnifierSource(dc, mag);
+                DrawAnnotationHandles(dc, a);
+            }
             if (a.Locked) DrawLockBadge(dc, ToView(AnnotationDocBounds(doc, a)));
         }
 
@@ -530,6 +535,39 @@ public sealed class CanvasView : FrameworkElement
         }
         poly.Freeze();
         dc.DrawGeometry(null, pen, poly);
+    }
+
+    private static readonly ResizeHandle[] SourceCorners = [ResizeHandle.TopLeft, ResizeHandle.TopRight, ResizeHandle.BottomRight, ResizeHandle.BottomLeft];
+    private static PointD CornerOf(RectD r, ResizeHandle h) => h switch
+    {
+        ResizeHandle.TopLeft => new(r.X, r.Y), ResizeHandle.TopRight => new(r.Right, r.Y),
+        ResizeHandle.BottomRight => new(r.Right, r.Bottom), _ => new(r.X, r.Bottom),
+    };
+
+    /// <summary>The magnified area: dashed outline, a connector to the lens and corner handles (drag inside to move it).</summary>
+    private void DrawMagnifierSource(DrawingContext dc, MagnifierAnnotation m)
+    {
+        var src = ToView(m.SourceRegion); var lens = ToView(m.Bounds);
+        if (m.Circular) dc.DrawEllipse(null, AnnSelectionPen, new Point(src.X + src.Width / 2, src.Y + src.Height / 2), src.Width / 2, src.Height / 2);
+        else dc.DrawRectangle(null, AnnSelectionPen, src);
+        Point Edge(Rect r, Point toward, bool round)
+        {
+            var c = new Point(r.X + r.Width / 2, r.Y + r.Height / 2); var v = toward - c; double len = v.Length;
+            if (len < 1e-6) return c; v /= len;
+            double k = round ? Math.Min(r.Width, r.Height) / 2 : Math.Min(Math.Abs(v.X) > 1e-6 ? r.Width / 2 / Math.Abs(v.X) : double.MaxValue, Math.Abs(v.Y) > 1e-6 ? r.Height / 2 / Math.Abs(v.Y) : double.MaxValue);
+            return c + v * k;
+        }
+        var sc = new Point(src.X + src.Width / 2, src.Y + src.Height / 2); var lc = new Point(lens.X + lens.Width / 2, lens.Y + lens.Height / 2);
+        if (!src.IntersectsWith(lens)) dc.DrawLine(AnnSelectionPen, Edge(src, lc, m.Circular), Edge(lens, sc, m.Circular));
+        foreach (var corner in SourceCorners) { var p = ToView(CornerOf(m.SourceRegion, corner)); dc.DrawEllipse(HandleFill, SelectionPen, p, HandleSize / 2, HandleSize / 2); }
+    }
+
+    private (MagnifierAnnotation Lens, ResizeHandle? Corner)? HitMagnifierSource(Point p)
+    {
+        if (_vm is not { } vm || vm.SelectedAnnotations.Count != 1 || vm.SelectedImages.Count != 0 || Tool != ToolKind.Select || vm.PrimaryAnnotation is not MagnifierAnnotation m || m.Locked) return null;
+        foreach (var corner in SourceCorners) if ((ToView(CornerOf(m.SourceRegion, corner)) - p).Length <= HandleSize) return (m, corner);
+        var src = ToView(m.SourceRegion);
+        return src.Contains(p) && !ToView(m.Bounds).Contains(p) ? (m, null) : null;
     }
 
     private void DrawAnnotationHandles(DrawingContext dc, Annotation a)
@@ -734,6 +772,11 @@ public sealed class CanvasView : FrameworkElement
             _drag = Drag.AnnHandle; _annHandle = ah; _annStart = sa; _resizeTarget = sa.Id;
             return;
         }
+        if (HitMagnifierSource(p) is { } ms)
+        {
+            _drag = Drag.MagSource; _magStart = ms.Lens; _magCorner = ms.Corner; _resizeTarget = ms.Lens.Id;
+            return;
+        }
         // Locked canvas: its handles resize it; grabbing the dotted edge moves it.
         if (!doc.AutoCanvas && !ctrl)
         {
@@ -893,6 +936,17 @@ public sealed class CanvasView : FrameworkElement
                     TryPreview(d => DocumentOps.UpdateAnnotation(d, changed));
                     return;
                 }
+            case Drag.MagSource:
+                {
+                    if (_magStart is not { } m) return;
+                    double dx = _curDoc.X - _downDoc.X, dy = _curDoc.Y - _downDoc.Y; var s = m.SourceRegion;
+                    var next = _magCorner is { } corner
+                        ? AnnotationGeometry.ResizeRect(s, corner, dx, dy, keepAspect: true) // keeps the lens aspect, changes the zoom
+                        : new RectD(s.X + dx, s.Y + dy, s.Width, s.Height);
+                    if (next.Width < 4 || next.Height < 4) return;
+                    TryPreview(d => DocumentOps.UpdateAnnotation(d, m.WithSource(next)));
+                    return;
+                }
             case Drag.Freehand:
                 if (_freehand.Count < FreehandAnnotation.MaxPoints && PointD.Distance(_freehand[^1], _curDoc) * _view.Zoom >= 1.5) _freehand.Add(_curDoc);
                 break;
@@ -924,6 +978,8 @@ public sealed class CanvasView : FrameworkElement
         var vm = _vm!;
         if (vm.SelectedImages.Count == 1 && vm.SelectedAnnotations.Count == 0 && vm.SelectedLayer is { } l && HitHandle(ToView(l.Bounds.ToRectD()), p) is { } imageHandle)
             return ResizeCursor(imageHandle);
+        if ((vm.PrimaryAnnotation is not { } pa || HitAnnotationHandle(pa, p) is null) && HitMagnifierSource(p) is { } ms)
+            return ms.Corner is { } mc ? ResizeCursor(mc) : Cursors.SizeAll;
         if (vm.SelectedAnnotations.Count == 1 && vm.SelectedImages.Count == 0 && vm.PrimaryAnnotation is { } a && HitAnnotationHandle(a, p) is { } h)
             return h.Kind switch
             {
@@ -1103,6 +1159,10 @@ public sealed class CanvasView : FrameworkElement
                 break;
             case Drag.AnnHandle:
                 if (preview is not null) _vm.Commit("Resize annotation", _ => preview);
+                break;
+            case Drag.MagSource:
+                if (preview is not null) _vm.Commit(_magCorner is null ? "Move magnified area" : "Resize magnified area", _ => preview);
+                _magStart = null;
                 break;
             case Drag.CanvasEdge or Drag.CanvasMove:
                 if (preview is not null) _vm.Commit(drag == Drag.CanvasMove ? "Move canvas" : "Resize canvas", _ => preview);
