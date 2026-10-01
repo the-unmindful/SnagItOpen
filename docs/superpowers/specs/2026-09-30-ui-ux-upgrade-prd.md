@@ -469,7 +469,7 @@ Each task is one session and one commit. "Deps" must be done first. "Done when" 
   Do: `UiState` record plus `UiStateStore` on `JsonFileStore` with sanitize; the new `AppSettings` fields and 2 → 3 migration; wire `ThemeService` to `ThemeMode`. Move the inspector section open-state dictionary (`AnnotationPropertiesPanel.cs:25-28`) into `UiState`. Save window placement on close and restore it on start (ignore off-screen).
   Done when: tests for v1→v3, v2→v3, unknown enums, corrupt `ui-state.json` → defaults, and off-screen bounds rejection pass.
 
-- [ ] **U04 Icon geometry set.** Deps: U01. Req: 5.5.
+- [x] **U04 Icon geometry set.** (Done 2026-10-01; the visual preview at 100%/200% is still a manual check.) Deps: U01. Req: 5.5.
   Files: `App/Themes/Icons.xaml`, test `IconResourceTests.cs`.
   Done when: every icon in the 5.5 list exists; the test parses each `Icon.*` and asserts bounds within 0–16; a scratch preview (not committed) was checked at 100% and 200% in both themes.
 

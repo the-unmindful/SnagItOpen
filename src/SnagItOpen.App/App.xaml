@@ -8,6 +8,7 @@
                 <!-- Index 0 is the colour token set; ThemeService swaps it at runtime. -->
                 <ResourceDictionary Source="/SnagItOpen;component/Themes/Tokens.Light.xaml" />
                 <ResourceDictionary Source="/SnagItOpen;component/Themes/Metrics.xaml" />
+                <ResourceDictionary Source="/SnagItOpen;component/Themes/Icons.xaml" />
                 <ResourceDictionary Source="/SnagItOpen;component/Themes/Controls.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
