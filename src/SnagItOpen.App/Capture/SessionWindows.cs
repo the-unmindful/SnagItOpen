@@ -28,6 +28,7 @@ internal abstract class SessionPanel : Window
     protected readonly EditorViewModel Vm;
     private readonly Window _owner;
     private WindowState _ownerState;
+    private readonly List<Window> _hidden = [];
     protected readonly TextBlock StatusText = new() { TextWrapping = TextWrapping.Wrap, MaxWidth = 320, Margin = new Thickness(0, 0, 0, 10), LineHeight = 18 };
     protected readonly WrapPanel Buttons = new() { MaxWidth = 320 };
     protected PixelRect Region;
@@ -89,8 +90,29 @@ internal abstract class SessionPanel : Window
         if (r is null) return false;
         Region = r.Value;
         _ownerState = _owner.WindowState;
-        _owner.WindowState = WindowState.Minimized;
+        await HideAppWindowsAsync();
         return true;
+    }
+
+    /// <summary>
+    /// Hides every app window except this panel (which is excluded from capture) and waits until the desktop no longer
+    /// shows them. Hide, not minimize: the minimize animation was still on screen when the first frame was taken, so the
+    /// editor ended up at the top of the stitched result.
+    /// </summary>
+    protected async Task HideAppWindowsAsync()
+    {
+        foreach (Window w in Application.Current.Windows)
+            if (w != this && w.IsVisible) { _hidden.Add(w); w.Hide(); }
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+        await Task.Delay(150);
+        AppNative.DwmFlush();
+        await Task.Delay(50);
+    }
+
+    protected void ShowAppWindows()
+    {
+        foreach (var w in _hidden) { try { w.Show(); } catch (InvalidOperationException) { } }
+        _hidden.Clear();
     }
 
     /// <summary>Shows the panel next to (not over) the region, in physical pixels.</summary>
@@ -121,6 +143,7 @@ internal abstract class SessionPanel : Window
     protected override void OnClosed(EventArgs e)
     {
         Services.Monitors.TopologyChanged -= OnTopology;
+        ShowAppWindows();
         if (_owner.WindowState == WindowState.Minimized) _owner.WindowState = _ownerState == WindowState.Minimized ? WindowState.Normal : _ownerState;
         _owner.Activate();
         base.OnClosed(e);
@@ -383,11 +406,16 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
             // other capture, so it follows the capture destination and lands in the recent captures library.
             var stitched = ScrollComposer.Compose(s.Frames.Select(f => (f.Frame, f.Overlap)).ToList(), s.HeaderRows, s.FooterRows);
             var dest = Destinations[Math.Max(0, _destination.SelectedIndex)].Value;
-            if (dest == CaptureDestination.NewDocument && Vm.IsDirty && !Vm.IsEmpty && OwnerWindow is MainWindow main && !main.ConfirmDiscard())
+            if (dest == CaptureDestination.NewDocument && Vm.IsDirty && !Vm.IsEmpty && OwnerWindow is MainWindow main)
             {
-                _finished = false; _busy = false; UpdateButtons();
-                SetStatus($"Kept the open image. Choose another Result, or Finish again. {Progress()}");
-                return;
+                ShowAppWindows(); // the save prompt belongs to the editor
+                if (!main.ConfirmDiscard())
+                {
+                    await HideAppWindowsAsync(); // keep the target clear for further frames
+                    _finished = false; _busy = false; UpdateButtons();
+                    SetStatus($"Kept the open image. Choose another Result, or Finish again. {Progress()}");
+                    return;
+                }
             }
             await Vm.AddCapturesAsync([new CaptureItem(stitched, Region)], dest);
             Vm.Status = $"Scrolling capture added: {s.Frames.Count} frame(s) stitched into one {stitched.Width} × {stitched.Height} px image.";
