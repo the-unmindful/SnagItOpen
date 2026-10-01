@@ -28,8 +28,8 @@ public static class AnnotationStyle
         return (s, target) switch
         {
             (LineAnnotation l, LineAnnotation t) => l with { Start = t.Start, End = t.End, Control = t.Control },
-            (CalloutAnnotation c, CalloutAnnotation t) => c with { Text = t.Text, Tail = t.Tail },
-            (TextAnnotation x, TextAnnotation t) => x with { Text = t.Text },
+            (CalloutAnnotation c, CalloutAnnotation t) => c with { Text = t.Text, Tail = t.Tail, Sizing = t.Sizing },
+            (TextAnnotation x, TextAnnotation t) => x with { Text = t.Text, Sizing = t.Sizing },
             (StepAnnotation st, StepAnnotation t) => st with { Number = t.Number, Tail = t.Tail, CustomText = t.CustomText },
             (FreehandAnnotation f, FreehandAnnotation t) => f with { Points = t.Points },
             (MagnifierAnnotation m, MagnifierAnnotation t) => m with { SourceRegion = t.SourceRegion },

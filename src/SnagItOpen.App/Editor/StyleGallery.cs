@@ -96,7 +96,7 @@ public sealed class StyleGallery : UserControl
             var normal = delta.Length < 0.0001 ? new SnagItOpen.Core.Geometry.PointD(0, -1) : new SnagItOpen.Core.Geometry.PointD(delta.Y / delta.Length, -delta.X / delta.Length);
             return line with { Control = mid + normal * (Math.Max(20, delta.Length) * 0.4) };
         }
-        return result;
+        return result is TextAnnotation text && !string.IsNullOrEmpty(text.Text) ? SnagItOpen.Imaging.Rendering.AnnotationRenderer.Fit(text) : result;
     }
     private void SaveCurrent()
     {

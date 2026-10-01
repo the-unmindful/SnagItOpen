@@ -34,11 +34,14 @@ public static class BuiltInStyles
                 break;
             case "Text":
                 Add("red", "Bold red text", new TextAnnotation { Bold = true, StrokeWidth = 0 });
-                Add("black", "Black on white", new TextAnnotation { Color = Rgba32.Black, Fill = Rgba32.White, StrokeWidth = 0 });
-                Add("white", "White on black", new TextAnnotation { Color = Rgba32.White, Fill = Rgba32.Black, StrokeWidth = 0 });
-                Add("yellow", "Yellow on dark", new TextAnnotation { Color = Yellow, Fill = new Rgba32(35, 35, 35, 255), Bold = true, StrokeWidth = 0 });
+                // Filled boxes: wider side padding and optical vertical centring read as deliberate labels (F-TXT4).
+                Add("label", "Label", new TextAnnotation { Color = Rgba32.White, Fill = new Rgba32(200, 30, 38, 255), Bold = true, StrokeWidth = 0, PaddingX = 12, PaddingY = 6, CornerRadius = 6, VerticalAlign = TextVAlign.Middle });
+                Add("pill", "Pill", new TextAnnotation { Color = Rgba32.White, Fill = new Rgba32(0, 103, 192, 255), Bold = true, StrokeWidth = 0, PaddingX = 16, PaddingY = 6, CornerRadius = 999, VerticalAlign = TextVAlign.Middle });
+                Add("note", "Note", new TextAnnotation { Color = new Rgba32(40, 40, 40, 255), Fill = new Rgba32(255, 236, 140, 255), StrokeWidth = 0, PaddingX = 12, PaddingY = 10, CornerRadius = 4, Shadow = true, VerticalAlign = TextVAlign.Middle });
+                Add("black", "Black on white", new TextAnnotation { Color = Rgba32.Black, Fill = Rgba32.White, StrokeWidth = 0, PaddingX = 10, PaddingY = 6, VerticalAlign = TextVAlign.Middle });
+                Add("white", "White on black", new TextAnnotation { Color = Rgba32.White, Fill = Rgba32.Black, StrokeWidth = 0, PaddingX = 10, PaddingY = 6, VerticalAlign = TextVAlign.Middle });
+                Add("yellow", "Yellow on dark", new TextAnnotation { Color = Yellow, Fill = new Rgba32(35, 35, 35, 255), Bold = true, StrokeWidth = 0, PaddingX = 10, PaddingY = 6, VerticalAlign = TextVAlign.Middle });
                 Add("outline", "Red with white outline", new TextAnnotation { Outline = Rgba32.White, Bold = true, StrokeWidth = 0 });
-                Add("blue", "Blue text", new TextAnnotation { Color = Blue, StrokeWidth = 0 });
                 break;
             case "Step":
                 Add("red", "Red circle", new StepAnnotation { StrokeWidth = 2 });
@@ -49,7 +52,7 @@ public static class BuiltInStyles
                 Add("rounded", "Green rounded square", new StepAnnotation { Color = Green, Shape = StepShape.RoundedSquare, StrokeWidth = 2 });
                 break;
             case "Callout":
-                Add("rounded", "Rounded white bubble", new CalloutAnnotation { Fill = Rgba32.White, StrokeWidth = 2 });
+                Add("rounded", "Rounded white bubble", new CalloutAnnotation { Fill = Rgba32.White, StrokeWidth = 2, PaddingX = 12, PaddingY = 8, CornerRadius = 8, VerticalAlign = TextVAlign.Middle });
                 Add("square", "Square blue bubble", new CalloutAnnotation { Color = Blue, Fill = Rgba32.White, Shape = CalloutShape.Rectangle, StrokeWidth = 2 });
                 Add("ellipse", "Yellow speech bubble", new CalloutAnnotation { Color = Rgba32.Black, Fill = Yellow, Shape = CalloutShape.Ellipse, StrokeWidth = 2 });
                 Add("dark", "Dark bubble", new CalloutAnnotation { Color = Rgba32.White, TextColor = Rgba32.White, Fill = Rgba32.Black, StrokeWidth = 2 });

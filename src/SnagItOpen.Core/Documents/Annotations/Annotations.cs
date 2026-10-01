@@ -161,6 +161,13 @@ public sealed record ArrowAnnotation : LineAnnotation
 [JsonConverter(typeof(JsonStringEnumConverter<TextAlign>))]
 public enum TextAlign { Left, Center, Right }
 
+/// <summary>AutoWidth: no wrapping, the box fits the longest line. AutoHeight: fixed width, wraps, height fits. Fixed: user-sized.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<TextSizing>))]
+public enum TextSizing { Fixed, AutoWidth, AutoHeight }
+
+[JsonConverter(typeof(JsonStringEnumConverter<TextVAlign>))]
+public enum TextVAlign { Top, Middle, Bottom }
+
 public record TextAnnotation : Annotation
 {
     public string Text { get; init; } = "Text";
@@ -176,7 +183,16 @@ public record TextAnnotation : Annotation
     /// <summary>Box border colour (width is <see cref="Annotation.StrokeWidth"/>).</summary>
     public Rgba32? Border { get; init; }
     public double Padding { get; init; } = 6;
+    /// <summary>Horizontal/vertical padding; null falls back to <see cref="Padding"/> (files saved before these existed).</summary>
+    public double? PaddingX { get; init; }
+    public double? PaddingY { get; init; }
     public double CornerRadius { get; init; } = 4;
+    /// <summary>How the box follows its text. Old files have no value and load as Fixed, so they never move.</summary>
+    public TextSizing Sizing { get; init; } = TextSizing.Fixed;
+    /// <summary>Vertical placement of the text block (cap height to last baseline) inside the box.</summary>
+    public TextVAlign VerticalAlign { get; init; } = TextVAlign.Top;
+    [JsonIgnore] public double PadX => Math.Clamp(PaddingX ?? Padding, 0, 200);
+    [JsonIgnore] public double PadY => Math.Clamp(PaddingY ?? Padding, 0, 200);
     public override string Kind => "Text";
     public override bool CanRotate => true;
 }

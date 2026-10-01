@@ -882,9 +882,10 @@ public sealed class CanvasView : FrameworkElement
                     var changed = AnnotationGeometry.Drag(start, _annHandle, _downDoc, _curDoc, shift);
                     if (changed is TextAnnotation ta && _annHandle.Kind == HandleKind.Resize && ta is not CalloutAnnotation { Shape: CalloutShape.Ellipse })
                     {
-                        // Side handles re-wrap text; the box grows to fit.
-                        double need = AnnotationRenderer.MeasureTextHeight(ta);
-                        if (need > ta.Bounds.Height) changed = ta with { Bounds = ta.Bounds with { Height = need } };
+                        // Dragging a top/bottom edge sets the height (Fixed); other handles set the width and the height follows.
+                        bool heightOnly = _annHandle.Corner is ResizeHandle.Top or ResizeHandle.Bottom;
+                        var sizing = heightOnly ? TextSizing.Fixed : ta.Sizing == TextSizing.Fixed ? TextSizing.Fixed : TextSizing.AutoHeight;
+                        changed = AnnotationRenderer.Fit(ta with { Sizing = sizing });
                     }
                     _angleLabel = _annHandle.Kind == HandleKind.Rotate
                         ? (changed is LineAnnotation ln ? Rotation2D.Normalize(Rotation2D.AngleOf(ln.Start, ln.End)) : changed.Rotation)
@@ -1277,6 +1278,8 @@ public sealed class CanvasView : FrameworkElement
             case ToolKind.Callout:
                 {
                     var proto = Tool == ToolKind.Callout ? Proto<CalloutAnnotation>(Tool) : Proto<TextAnnotation>(Tool);
+                    // Click-placed text grows with what is typed and centres in its box (TXT1/TXT2).
+                    proto = proto with { Sizing = TextSizing.AutoWidth, VerticalAlign = TextVAlign.Middle };
                     double fs = proto.FontSize;
                     var w = Math.Max(120, fs * 10);
                     var box = new RectD(p.X, p.Y, w, fs * 1.6 + 2 * Math.Max(0, proto.Padding));

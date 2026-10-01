@@ -319,8 +319,16 @@ public sealed class AnnotationPropertiesPanel : StackPanel
         }
         _into.Children.Add(Row("Style", styles));
 
-        SliderRow("Padding", t.Padding, 0, 60, 1, "0", Mixed(x => (x as TextAnnotation)?.Padding ?? 0), null,
-            (x, v) => x is TextAnnotation y ? FitHeight(y with { Padding = v }) : x, "px", 6, "Padding");
+        Segmented("Vertical", ["Top", "Middle", "Bottom"], (int)t.VerticalAlign,
+            i => (x => x is TextAnnotation y ? FitHeight(y with { VerticalAlign = (TextVAlign)i }) : x), "Vertical alignment",
+            ["Align text to the top", "Centre text vertically", "Align text to the bottom"]);
+        Segmented("Box size", ["Fit text", "Fit height", "Fixed"], t.Sizing switch { TextSizing.AutoWidth => 0, TextSizing.AutoHeight => 1, _ => 2 },
+            i => (x => x is TextAnnotation y ? FitHeight(y with { Sizing = i switch { 0 => TextSizing.AutoWidth, 1 => TextSizing.AutoHeight, _ => TextSizing.Fixed } }) : x), "Box size",
+            ["Box grows to fit the text (no wrapping)", "Fixed width, wraps; height follows the text", "Keep the box size (it still grows if text would be hidden)"]);
+        SliderRow("Padding H", t.PadX, 0, 80, 1, "0", Mixed(x => (x as TextAnnotation)?.PadX ?? 0), null,
+            (x, v) => x is TextAnnotation y ? FitHeight(y with { PaddingX = v, PaddingY = y.PadY }) : x, "px", 10, "Horizontal padding");
+        SliderRow("Padding V", t.PadY, 0, 80, 1, "0", Mixed(x => (x as TextAnnotation)?.PadY ?? 0), null,
+            (x, v) => x is TextAnnotation y ? FitHeight(y with { PaddingY = v, PaddingX = y.PadX }) : x, "px", 6, "Vertical padding");
         SliderRow("Corner radius", t.CornerRadius, 0, 60, 1, "0", Mixed(x => (x as TextAnnotation)?.CornerRadius ?? 0), null,
             (x, v) => x is TextAnnotation y ? y with { CornerRadius = v } : x, "px", 4, "Corner radius");
         Segmented("Text outline", ["None", "White", "Black"], t.Outline is null ? 0 : t.Outline == Rgba32.White ? 1 : 2,
@@ -342,8 +350,7 @@ public sealed class AnnotationPropertiesPanel : StackPanel
     private static TextAnnotation FitHeight(TextAnnotation t)
     {
         if (t.Bounds.IsEmpty || string.IsNullOrEmpty(t.Text)) return t;
-        double h = AnnotationRenderer.MeasureTextHeight(t);
-        return h > t.Bounds.Height ? t with { Bounds = t.Bounds with { Height = h } } : t;
+        return AnnotationRenderer.Fit(t);
     }
 
     private void BuildStep(StepAnnotation s)

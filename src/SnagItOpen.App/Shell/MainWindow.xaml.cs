@@ -379,6 +379,7 @@ public partial class MainWindow : Window
 
     private TextBox? _textBox;
     private TextAnnotation? _textTarget;
+    private TextAnnotation? _textLayout; // live auto-size layout while typing (not committed)
     private bool _textIsNew, _textClosing;
 
     /// <summary>
@@ -401,7 +402,7 @@ public partial class MainWindow : Window
         var tb = new TextBox
         {
             // An empty style opts out of the themed input template, which would change size and padding vs the renderer.
-            Style = new Style(typeof(TextBox)), Margin = new Thickness(0, 2, 0, 2),
+            Style = new Style(typeof(TextBox)),
             Text = t.Text, AcceptsReturn = true, AcceptsTab = false, TextWrapping = TextWrapping.Wrap,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(0), Foreground = new SolidColorBrush(color.ToColor()),
@@ -415,7 +416,7 @@ public partial class MainWindow : Window
         tb.SetResourceReference(TextBox.BorderBrushProperty, "Accent.Select");
         if (color.A == 0) tb.SetResourceReference(TextBox.CaretBrushProperty, "Text.Primary");
         else tb.CaretBrush = tb.Foreground;
-        TextBlock.SetLineHeight(tb, t.FontSize * 1.2 * Canvas.Zoom);
+        TextBlock.SetLineHeight(tb, tb.FontFamily.LineSpacing * t.FontSize * Canvas.Zoom); // same line box as the renderer
         if (t.Underline) tb.TextDecorations = TextDecorations.Underline;
         System.Windows.Automation.AutomationProperties.SetName(tb, "Annotation text. Ctrl+Enter to finish, Escape to cancel.");
         tb.PreviewKeyDown += (_, e) =>
@@ -424,7 +425,12 @@ public partial class MainWindow : Window
             else if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { FinishTextEdit(commit: true); e.Handled = true; }
         };
         tb.LostKeyboardFocus += (_, _) => FinishTextEdit(commit: true);
-        tb.TextChanged += (_, _) => PositionTextEditor();
+        tb.TextChanged += (_, _) =>
+        {
+            // Live layout: the box follows the text while typing (auto-size), exactly as it will after commit.
+            if (_textTarget is { } target) _textLayout = AnnotationRenderer.Fit(target with { Text = tb.Text.Length == 0 ? " " : tb.Text });
+            PositionTextEditor();
+        };
         _textBox = tb;
         if (!isNew) Canvas.EditingAnnotation = t.Id;
         TextEditorLayer.Children.Add(tb);
@@ -436,20 +442,29 @@ public partial class MainWindow : Window
     /// <summary>Keeps the editor over the text area at the current zoom, pan and rotation.</summary>
     private void PositionTextEditor()
     {
-        if (_textBox is not { } tb || _textTarget is not { } t) return;
+        if (_textBox is not { } tb || (_textLayout ?? _textTarget) is not { } t) return;
         double z = Canvas.Zoom;
+        // The editor covers the whole box (with the box fill) and pads its text to the renderer's glyph origin,
+        // so nothing jumps on commit, including vertically centred text.
         var area = AnnotationRenderer.TextArea(t);
-        var tl = Canvas.ToViewPoint(new PointD(area.X, area.Y));
+        var ft = AnnotationRenderer.Format(t, t.Color, area.Width);
+        var origin = AnnotationRenderer.GlyphOrigin(t, ft, area);
+        var box = t.Bounds;
+        var tl = Canvas.ToViewPoint(new PointD(box.X, box.Y));
+        const double caret = 2; // TextBox keeps a 2 DIP inner margin left and right of the text
         tb.FontSize = Math.Clamp(t.FontSize * z, 1, 2000);
-        tb.Width = Math.Max(40, area.Width * z + 4);
-        tb.MinHeight = Math.Max(tb.FontSize * 1.4, area.Height * z);
-        System.Windows.Controls.Canvas.SetLeft(tb, tl.X - 2);
-        System.Windows.Controls.Canvas.SetTop(tb, tl.Y - 1);
+        TextBlock.SetLineHeight(tb, tb.FontFamily.LineSpacing * tb.FontSize);
+        tb.Padding = new Thickness(Math.Max(0, (origin.X - box.X) * z - 1 - caret), Math.Max(0, (origin.Y - box.Y) * z - 1),
+            Math.Max(0, (box.Right - area.Right) * z - 1 - caret), 0);
+        tb.Width = Math.Max(40, box.Width * z);
+        tb.MinHeight = Math.Max(tb.FontSize * 1.4, box.Height * z);
+        System.Windows.Controls.Canvas.SetLeft(tb, tl.X);
+        System.Windows.Controls.Canvas.SetTop(tb, tl.Y);
         if (t.Rotation != 0)
         {
             var c = Canvas.ToViewPoint(t.Bounds.Center);
             tb.RenderTransformOrigin = new Point(0, 0);
-            tb.RenderTransform = new RotateTransform(t.Rotation, c.X - (tl.X - 2), c.Y - (tl.Y - 1));
+            tb.RenderTransform = new RotateTransform(t.Rotation, c.X - tl.X, c.Y - tl.Y);
         }
         else tb.RenderTransform = Transform.Identity;
     }
@@ -463,7 +478,7 @@ public partial class MainWindow : Window
             var text = tb.Text;
             bool isNew = _textIsNew;
             _textBox = null;
-            _textTarget = null;
+            _textTarget = null; _textLayout = null;
             TextEditorLayer.Children.Remove(tb);
             Canvas.EditingAnnotation = null;
             if (!commit) { _vm.Status = isNew ? "Text canceled." : "Edit canceled."; return; }
@@ -473,9 +488,7 @@ public partial class MainWindow : Window
                 return;
             }
             if (!isNew && text == t.Text) return;
-            var updated = t with { Text = text };
-            double h = AnnotationRenderer.MeasureTextHeight(updated);
-            updated = updated with { Bounds = updated.Bounds with { Height = Math.Max(updated.Bounds.Height, h) } };
+            var updated = AnnotationRenderer.Fit(t with { Text = text });
             if (!WpfConvert.IsFontAvailable(updated.FontFamily))
                 _vm.Status = $"Font '{updated.FontFamily}' is not installed; a fallback font is shown and exported.";
             if (isNew) _vm.AddAnnotation(updated);

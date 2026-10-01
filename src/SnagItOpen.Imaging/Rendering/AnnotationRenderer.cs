@@ -266,15 +266,14 @@ public static class AnnotationRenderer
         return ft;
     }
 
-    private static double Pad(TextAnnotation t) => Math.Clamp(t.Padding, 0, 200);
+    private static bool IsEllipse(TextAnnotation t) => t is CalloutAnnotation { Shape: CalloutShape.Ellipse };
 
     /// <summary>Text area inside the box (ellipse callouts use the inscribed rectangle).</summary>
     public static Rect TextArea(TextAnnotation t)
     {
         var r = t.Bounds.ToRect();
-        double inset = Pad(t);
-        double ix = inset, iy = inset;
-        if (t is CalloutAnnotation { Shape: CalloutShape.Ellipse })
+        double ix = t.PadX, iy = t.PadY;
+        if (IsEllipse(t))
         {
             ix += r.Width * (1 - Math.Sqrt(0.5)) / 2;
             iy += r.Height * (1 - Math.Sqrt(0.5)) / 2;
@@ -288,7 +287,64 @@ public static class AnnotationRenderer
         var area = TextArea(t);
         var ft = Format(t, t.Color, area.Width);
         double extra = t.Bounds.Height - area.Height;
-        return ft.Height + Math.Max(0, extra);
+        return BlockHeight(t, ft) + Math.Max(0, extra);
+    }
+
+    private static (double LineHeight, double Cap, double Descent) Metrics(TextAnnotation t)
+    {
+        var family = new FontFamily(string.IsNullOrWhiteSpace(t.FontFamily) ? "Segoe UI" : t.FontFamily);
+        var tf = new Typeface(family, t.Italic ? FontStyles.Italic : FontStyles.Normal, t.Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal);
+        double size = Math.Clamp(t.FontSize, 1, 1000), line = family.LineSpacing * size, baseline = family.Baseline * size;
+        return (line, tf.CapsHeight * size, Math.Max(0, line - baseline));
+    }
+
+    /// <summary>
+    /// Height the text occupies inside the box. Top-aligned (legacy) text uses the full line boxes. Middle/Bottom use the
+    /// optical block from the first cap height to the last baseline, padded by the descent on both sides so descenders
+    /// stay inside and the block stays centred.
+    /// </summary>
+    private static double BlockHeight(TextAnnotation t, FormattedText ft)
+    {
+        if (t.VerticalAlign == TextVAlign.Top) return ft.Height;
+        var (line, cap, descent) = Metrics(t);
+        return Math.Max(0, ft.Height - line + cap) + 2 * descent;
+    }
+
+    /// <summary>Top-left origin for <see cref="FormattedText"/> so the text block sits per <see cref="TextAnnotation.VerticalAlign"/>.</summary>
+    public static Point GlyphOrigin(TextAnnotation t, FormattedText ft, Rect area)
+    {
+        if (t.VerticalAlign == TextVAlign.Top) return area.TopLeft;
+        var (line, cap, descent) = Metrics(t);
+        double block = BlockHeight(t, ft);
+        double blockTop = t.VerticalAlign == TextVAlign.Middle ? area.Y + (area.Height - block) / 2 : area.Bottom - block;
+        // The block starts one descent above the cap height of the first line.
+        double capTop = blockTop + descent, baselineOffset = ft.Baseline;
+        return new Point(area.X, capTop - (baselineOffset - cap));
+    }
+
+    /// <summary>
+    /// Resizes the box to its text per <see cref="TextAnnotation.Sizing"/> (anchored at the top-left).
+    /// Fixed boxes only grow in height so no text is ever hidden.
+    /// </summary>
+    public static TextAnnotation Fit(TextAnnotation t)
+    {
+        if (t.Bounds.IsEmpty) return t;
+        double k = IsEllipse(t) ? Math.Sqrt(0.5) : 1;
+        if (t.Sizing == TextSizing.AutoWidth)
+        {
+            var free = Format(t, t.Color, 100000);
+            double contentW = Math.Ceiling(free.WidthIncludingTrailingWhitespace) + 1;
+            double width = (contentW + 2 * t.PadX) / k;
+            var sized = t with { Bounds = t.Bounds with { Width = width } };
+            double height = (BlockHeight(t, Format(sized, t.Color, TextArea(sized).Width)) + 2 * t.PadY) / k;
+            return sized with { Bounds = sized.Bounds with { Height = Math.Ceiling(height) } };
+        }
+        var area = TextArea(t);
+        double need = (BlockHeight(t, Format(t, t.Color, area.Width)) + 2 * t.PadY) / k;
+        need = Math.Ceiling(need);
+        if (t.Sizing == TextSizing.AutoHeight) return t with { Bounds = t.Bounds with { Height = need } };
+        double legacy = MeasureTextHeight(t);
+        return legacy > t.Bounds.Height ? t with { Bounds = t.Bounds with { Height = legacy } } : t;
     }
 
     private static void DrawText(DrawingContext dc, TextAnnotation t)
@@ -304,7 +360,7 @@ public static class AnnotationRenderer
     private static void DrawGlyphs(DrawingContext dc, TextAnnotation t, Rgba32 color, Rect area)
     {
         var ft = Format(t, color, area.Width);
-        var origin = area.TopLeft;
+        var origin = GlyphOrigin(t, ft, area);
         if (t.Outline is { } outline)
         {
             var g = ft.BuildGeometry(origin);

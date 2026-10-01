@@ -164,4 +164,5 @@ Problem today: `ScrollingCaptureWindow.FinishAsync` (`App/Capture/SessionWindows
 2. Worker, in parallel: SCR1–SCR4, then V15, V18, V23, then V24 renders (which include TXT/MAG results once merged).
 
 ## F status
-- TXT: not started · MAG: not started · STY: not started · GRP: waiting for the user's answer · SCR: not started (worker)
+- TXT: **TXT1, TXT2, TXT3, TXT4 and TXT5 done 2026-10-01 (Claude).** `TextAnnotation.Sizing`/`PaddingX`/`PaddingY`/`VerticalAlign`; `AnnotationRenderer.Fit` and `GlyphOrigin`; inspector rows Vertical, Box size, Padding H and Padding V; click-placed text is AutoWidth + Middle; top/bottom handle → Fixed, other handles → AutoHeight; the editor covers the box and grows live. Built-ins Label, Pill and Note were added and "Blue text" was dropped (the PRD allows 6–8 per tool). Tests: `TextLayoutTests` (3). Not yet seen by the user on screen.
+- MAG: not started · STY: not started · GRP: waiting for the user's answer · SCR: not started (worker)
