@@ -76,7 +76,7 @@ public sealed class GalleryContractTests
     {
         var renderer = new StyleThumbnailRenderer(); var style = BuiltInStyles.For("Arrow")[0].Style;
         var bitmap = renderer.Render(style, EffectiveTheme.Light); Assert.Same(bitmap, renderer.Render(style, EffectiveTheme.Light)); Assert.Equal(1, renderer.RenderCount);
-        var pixels = new byte[56 * 40 * 4]; bitmap.CopyPixels(pixels, 56 * 4, 0);
+        var pixels = new byte[StyleThumbnailRenderer.TileWidth * StyleThumbnailRenderer.TileHeight * 4]; bitmap.CopyPixels(pixels, StyleThumbnailRenderer.TileWidth * 4, 0);
         Assert.Contains(Enumerable.Range(0, pixels.Length / 4), i => pixels[i * 4 + 2] > 160 && pixels[i * 4 + 1] < 100);
         Assert.NotSame(bitmap, renderer.Render(style, EffectiveTheme.Dark)); Assert.Equal(2, renderer.RenderCount); return true;
     });

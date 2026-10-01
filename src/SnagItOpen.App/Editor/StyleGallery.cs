@@ -17,6 +17,7 @@ public sealed class StyleGallery : UserControl
     private readonly EditorViewModel _vm;
     private readonly Func<Annotation?> _sample;
     private readonly Action _refreshProperties;
+    public const string StyleIdFormat = "SnagItOpen.Style", StyleKindFormat = "SnagItOpen.StyleKind";
     private readonly WrapPanel _tiles = new();
     private readonly StyleThumbnailRenderer _renderer = new();
     private readonly List<(string Id, Button Button)> _buttons = [];
@@ -45,10 +46,12 @@ public sealed class StyleGallery : UserControl
         _shape = shape; _tiles.Children.Clear(); _buttons.Clear();
         foreach (var entry in entries)
         {
-            var button = new Button { Width = 56, Height = 40, Margin = new Thickness(0, 0, 4, 4), Padding = new Thickness(0), Tag = entry.Id, AllowDrop = true };
+            var button = new Button { Width = 64, Height = 44, Margin = new Thickness(0, 0, 4, 4), Padding = new Thickness(0), Tag = entry.Id, AllowDrop = true };
             string description = Describe(entry.Style); AutomationProperties.SetName(button, $"{entry.Name}, {description}"); button.ToolTip = $"{entry.Name}\n{description}";
             if (entry.Style is MagnifierAnnotation) button.Content = ControlsIcon("Magnify");
-            else button.Content = new Image { Source = _renderer.Render(entry.Style, ThemeService.Current?.Effective ?? EffectiveTheme.Light), Width = 52, Height = 36, Stretch = Stretch.Uniform };
+            else button.Content = new Image { Source = _renderer.Render(entry.Style, ThemeService.Current?.Effective ?? EffectiveTheme.Light, VisualTreeHelper.GetDpi(this).DpiScaleX), Width = 60, Height = 40, Stretch = Stretch.Uniform };
+            button.ToolTip = $"{entry.Name}\n{description}\nDouble-click or drag onto the canvas to insert.";
+            button.MouseDoubleClick += (_, e) => { _vm.RequestInsertStyle(entry.Style); e.Handled = true; };
             button.Click += (_, _) => Apply(entry);
             button.ContextMenu = BuildMenu(entry);
             button.PreviewKeyDown += (_, e) => TileKey(button, entry, e);
@@ -57,7 +60,9 @@ public sealed class StyleGallery : UserControl
             button.MouseMove += (_, e) =>
             {
                 if (_dragStart is not { } start || _dragId != entry.Id || e.LeftButton != MouseButtonState.Pressed || (e.GetPosition(this) - start).Length < 5) return;
-                _dragStart = null; DragDrop.DoDragDrop(button, new DataObject("SnagItOpen.Style", entry.Id), DragDropEffects.Move);
+                _dragStart = null;
+                var data = new DataObject(StyleIdFormat, entry.Id); data.SetData(StyleKindFormat, _kind);
+                DragDrop.DoDragDrop(button, data, DragDropEffects.Copy | DragDropEffects.Move); // Move = reorder here, Copy = insert on the canvas
             };
             button.DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent("SnagItOpen.Style") ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true; };
             button.Drop += (_, e) =>
@@ -67,7 +72,7 @@ public sealed class StyleGallery : UserControl
             };
             _buttons.Add((entry.Id, button)); _tiles.Children.Add(button);
         }
-        var add = new IconButton { Label = "Save current style", ShowLabel = false, Width = 56, Height = 40, Margin = new Thickness(0, 0, 4, 4), Icon = Geometry.Parse("M8,3 L8,13 M3,8 L13,8") }; add.Click += (_, _) => SaveCurrent(); _tiles.Children.Add(add);
+        var add = new IconButton { Label = "Save current style", ShowLabel = false, IsSubtle = false, Width = 64, Height = 44, Margin = new Thickness(0, 0, 4, 4), Icon = Geometry.Parse("M8,3 L8,13 M3,8 L13,8") }; add.Click += (_, _) => SaveCurrent(); _tiles.Children.Add(add);
         UpdateSelected(entries); if (focused is not null) _buttons.FirstOrDefault(b => b.Id == focused).Button?.Focus();
     }
     private FrameworkElement ControlsIcon(string name) => ControlVisuals.Icon(TryFindResource("Icon." + name) as Geometry, this, 20);
@@ -114,7 +119,14 @@ public sealed class StyleGallery : UserControl
     {
         var menu = new ContextMenu();
         void Add(string label, Action action) { var item = new MenuItem { Header = label }; item.Click += (_, _) => { Try(action); Refresh(_kind); }; menu.Items.Add(item); }
-        Add("Apply", () => Apply(entry)); Add("Set as tool default", () => _services.AnnotationStyles.SetPrototype(_kind, entry.Style));
+        Add("Insert on canvas", () => _vm.RequestInsertStyle(entry.Style));
+        Add("Apply to selection", () => Apply(entry)); Add("Set as tool default", () => _services.AnnotationStyles.SetPrototype(_kind, entry.Style));
+        if (!entry.BuiltIn) Add("Update from selection", () =>
+        {
+            if (_vm.PrimaryAnnotation is not { } selected || selected.Kind != _kind) { _vm.Status = $"Select one {_kind.ToLowerInvariant()} whose look should replace “{entry.Name}”."; return; }
+            if (System.Windows.MessageBox.Show(Window.GetWindow(this), $"Replace the saved style “{entry.Name}” with the selected {_kind.ToLowerInvariant()}'s look?", "Update style", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
+            if (_services.AnnotationStyles.UpdateGalleryStyle(_kind, entry.Id, selected)) _vm.Status = $"Style “{entry.Name}” updated.";
+        });
         if (!entry.BuiltIn) Add("Rename…", () => { string? name = Dialogs.Prompt(Window.GetWindow(this), "Rename style", "Style name:", entry.Name); if (name is not null) _services.AnnotationStyles.RenameGallery(_kind, entry.Id, name); });
         Add("Duplicate", () => _services.AnnotationStyles.DuplicateGallery(_kind, entry.Id)); Add("Move left", () => _services.AnnotationStyles.MoveGalleryBy(_kind, entry.Id, -1)); Add("Move right", () => _services.AnnotationStyles.MoveGalleryBy(_kind, entry.Id, 1));
         Add(entry.BuiltIn ? "Hide" : "Delete", () => _services.AnnotationStyles.DeleteGallery(_kind, entry.Id)); Add("Restore built-in styles", () => _services.AnnotationStyles.RestoreBuiltIns(_kind)); return menu;
@@ -122,6 +134,7 @@ public sealed class StyleGallery : UserControl
     private void TileKey(Button button, GalleryEntry entry, KeyEventArgs e)
     {
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key == Key.Enter) { _vm.RequestInsertStyle(entry.Style); e.Handled = true; return; }
         if (key is not (Key.Left or Key.Right or Key.Up or Key.Down)) return;
         int direction = key is Key.Left or Key.Up ? -1 : 1;
         if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt) && key is Key.Left or Key.Right) { _services.AnnotationStyles.MoveGalleryBy(_kind, entry.Id, direction); Refresh(_kind); _buttons.FirstOrDefault(b => b.Id == entry.Id).Button?.Focus(); }

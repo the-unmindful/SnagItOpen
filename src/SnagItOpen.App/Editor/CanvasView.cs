@@ -122,14 +122,40 @@ public sealed class CanvasView : FrameworkElement
     public bool IsAllContentHidden => _vm is { IsEmpty: false } && !_vm.Displayed.Images.Any(i => i.Visible)
         && !_vm.Displayed.Annotations.Any(a => !a.Hidden || a is RedactionAnnotation);
 
+    /// <summary>Inserts a saved style as a new annotation at a view point (default: centre of the visible canvas).</summary>
+    public void InsertStyled(Annotation style, Point? at = null)
+    {
+        if (_vm is not { } vm) return;
+        var c = ToDoc(at ?? new Point(ActualWidth / 2, ActualHeight / 2));
+        var a = StyleInsertion.Create(style, new PointD(Math.Round(c.X), Math.Round(c.Y)), vm.Document);
+        vm.AddAnnotation(a); Focus();
+    }
+    private void OnInsertStyle(Annotation style) => InsertStyled(style);
+
+    protected override void OnDragOver(DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(StyleGallery.StyleKindFormat)) { e.Effects = DragDropEffects.Copy; e.Handled = true; return; }
+        base.OnDragOver(e);
+    }
+
+    protected override void OnDrop(DragEventArgs e)
+    {
+        if (_vm is { } vm && e.Data.GetData(StyleGallery.StyleKindFormat) is string kind && e.Data.GetData(StyleGallery.StyleIdFormat) is string id &&
+            vm.Services.AnnotationStyles.GalleryFor(kind).FirstOrDefault(g => g.Id == id) is { } entry)
+        {
+            InsertStyled(entry.Style, e.GetPosition(this)); e.Handled = true; return;
+        }
+        base.OnDrop(e);
+    }
+
     public EditorViewModel? ViewModel
     {
         get => _vm;
         set
         {
-            if (_vm is not null) _vm.CanvasInvalidated -= OnInvalidated;
+            if (_vm is not null) { _vm.CanvasInvalidated -= OnInvalidated; _vm.InsertStyleRequested -= OnInsertStyle; }
             _vm = value;
-            if (_vm is not null) _vm.CanvasInvalidated += OnInvalidated;
+            if (_vm is not null) { _vm.CanvasInvalidated += OnInvalidated; _vm.InsertStyleRequested += OnInsertStyle; }
             _fitPending = true;
             _documentDirty = true;
             InvalidateVisual();

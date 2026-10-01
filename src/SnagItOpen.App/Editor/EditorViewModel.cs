@@ -81,6 +81,9 @@ public sealed class EditorViewModel : ObservableObject
 
     /// <summary>Raised whenever the canvas should redraw (document, selection or preview changes).</summary>
     public event Action? CanvasInvalidated;
+    /// <summary>Raised by the style gallery (double-click/Enter) to insert a styled annotation on the canvas.</summary>
+    public event Action<Annotation>? InsertStyleRequested;
+    public void RequestInsertStyle(Annotation style) => InsertStyleRequested?.Invoke(style);
     /// <summary>Raised for errors that deserve a dialog rather than only a status message.</summary>
     public event Action<string>? ErrorRaised;
     /// <summary>Raised after the selection changes (the image list mirrors it).</summary>

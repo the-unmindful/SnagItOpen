@@ -102,6 +102,9 @@ public sealed class AnnotationStyleStore
         return UpdateGallery(kind, id, e => e.BuiltIn ? e : e with { Name = name });
     }
     public bool HideGallery(string kind, string id, bool hidden = true) => UpdateGallery(kind, id, e => e with { Hidden = hidden });
+    /// <summary>Overwrites a saved (not built-in) style with another annotation's look.</summary>
+    public bool UpdateGalleryStyle(string kind, string id, Annotation style) =>
+        style.Kind == kind && AnnotationStyle.IsValidPrototype(Strip(style)) && UpdateGallery(kind, id, e => e.BuiltIn ? e : e with { Style = Strip(style) });
     public bool DeleteGallery(string kind, string id)
     {
         var entries = GalleryFor(kind, true); var target = entries.FirstOrDefault(e => e.Id == id); if (target is null) return false;
