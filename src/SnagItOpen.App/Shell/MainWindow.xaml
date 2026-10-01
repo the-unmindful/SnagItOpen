@@ -8,65 +8,7 @@
     <Window.Resources>
         <inf:NotNullToVisibilityConverter x:Key="NotNullVis" />
         <inf:NotConverter x:Key="Not" />
-
-        <!-- Empty-canvas start card -->
-        <Style x:Key="StartButton" TargetType="Button">
-            <Setter Property="Margin" Value="5,0" />
-            <Setter Property="Padding" Value="10,12" />
-            <Setter Property="Foreground" Value="#FF222222" />
-            <Setter Property="Background" Value="#FFF4F4F4" />
-            <Setter Property="BorderBrush" Value="#FFD6D6D6" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FFD3252B" />
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FF222222" />
-                                <Setter TargetName="Bd" Property="BorderThickness" Value="2" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="StartPrimaryButton" TargetType="Button" BasedOn="{StaticResource StartButton}">
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="Background" Value="#FFC81E26" />
-            <Setter Property="BorderBrush" Value="#FFA3141B" />
-        </Style>
-        <Style x:Key="StartShortcutText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="#FF444444" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Margin" Value="0,4,10,4" />
-        </Style>
-        <Style x:Key="KeyCap" TargetType="Label">
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="FontFamily" Value="Segoe UI Semibold" />
-            <Setter Property="Foreground" Value="#FF333333" />
-            <Setter Property="HorizontalAlignment" Value="Right" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Label">
-                        <Border Background="#FFF6F6F6" BorderBrush="#FFCFCFCF" BorderThickness="1,1,1,2" CornerRadius="4" Padding="6,1">
-                            <ContentPresenter VerticalAlignment="Center" />
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- Start-card styles (StartButton, StartPrimaryButton, StartShortcutText, KeyCap) live in Themes/Controls.xaml. -->
     </Window.Resources>
     <DockPanel>
         <Menu DockPanel.Dock="Top">

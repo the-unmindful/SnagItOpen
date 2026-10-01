@@ -459,7 +459,7 @@ Each task is one session and one commit. "Deps" must be done first. "Done when" 
   Do: load tokens by `System | Light | Dark` (read `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`), switch to high contrast when `SystemParameters.HighContrast`, listen to `SystemEvents.UserPreferenceChanged`, raise `ThemeChanged`, and set the dark title bar for every window. The theme mode is a constructor argument for now (U03 adds the setting).
   Done when: a Windows.Tests test loads each token dictionary and asserts that all three have the same key set and every value is a `Brush` or `Color`; the app starts unchanged in Light.
 
-- [ ] **U02 Metrics and control styles.** Deps: U01. Req: 5.3, 5.4, R-E13.1.
+- [x] **U02 Metrics and control styles.** Deps: U01. Req: 5.3, 5.4, R-E13.1.
   Files: `App/Themes/Metrics.xaml`, `App/Themes/Controls.xaml`, `App.xaml`.
   Do: implicit styles for the controls listed in 5.1 using `DynamicResource` tokens only; a shared `FocusVisualStyle`; `ThemeService.AnimationsEnabled`. Move `StartButton`, `StartPrimaryButton`, `KeyCap` from `MainWindow.xaml` into `Controls.xaml` with the same keys. Delete the unused `ToolbarButton` style and `BoolToVis`.
   Done when: the app builds and runs with restyled stock controls in Light and Dark (manual); keyboard focus shows rings on buttons, checkboxes and text boxes (manual).

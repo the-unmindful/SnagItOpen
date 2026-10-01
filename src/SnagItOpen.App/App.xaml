@@ -4,30 +4,12 @@
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
-        <ResourceDictionary.MergedDictionaries>
-            <!-- Index 0 is the colour token set; ThemeService swaps it at runtime. -->
-            <ResourceDictionary Source="/SnagItOpen;component/Themes/Tokens.Light.xaml" />
-        </ResourceDictionary.MergedDictionaries>
-        <BooleanToVisibilityConverter x:Key="BoolToVis" />
-        <Style x:Key="ToolbarButton" TargetType="Button">
-            <Setter Property="Margin" Value="2" />
-            <Setter Property="Padding" Value="8,4" />
-            <Setter Property="MinWidth" Value="32" />
-        </Style>
-        <Style x:Key="SectionHeader" TargetType="TextBlock">
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin" Value="0,10,0,4" />
-        </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Margin" Value="0,2" />
-            <Setter Property="Padding" Value="2" />
-        </Style>
-        <Style TargetType="CheckBox">
-            <Setter Property="Margin" Value="0,3" />
-        </Style>
-        <Style TargetType="RadioButton">
-            <Setter Property="Margin" Value="0,3" />
-        </Style>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Index 0 is the colour token set; ThemeService swaps it at runtime. -->
+                <ResourceDictionary Source="/SnagItOpen;component/Themes/Tokens.Light.xaml" />
+                <ResourceDictionary Source="/SnagItOpen;component/Themes/Metrics.xaml" />
+                <ResourceDictionary Source="/SnagItOpen;component/Themes/Controls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

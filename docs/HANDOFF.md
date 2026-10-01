@@ -39,7 +39,10 @@ A local, offline Windows screenshot capture and image editor, similar to Snagit.
 - **PowerShell 5.1 quoting.** Use single quotes for literal strings with `$`; `git commit -m` with multi-line text is easiest via several `-m` arguments.
 - **Warnings are errors in practice.** The gate expects 0 warnings. Nullable warnings (CS8600-CS8625) are the usual ones in new code; fix them, don't suppress them.
 - **Resource dictionaries (UI upgrade).** Use `DynamicResource` for anything that must change with the theme; `StaticResource` is resolved once and will not follow a theme swap. A key missing from one theme dictionary only fails at runtime, so the token-parity test (U01) is the guard. Code-built UI must use `SetResourceReference`.
-- **WPF tests need STA.** Windows.Tests that create WPF objects must run on an STA thread (see existing helpers in the test project before writing a new one).
+- **WPF tests need STA.** Windows.Tests that create WPF objects must run on an STA thread (`ThemeTokenTests.RunSta` is a reusable helper).
+- **PATH does not persist between shell calls.** Prefix every command with `$env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH";`. To launch the Debug exe for a smoke run, also set `$env:DOTNET_ROOT = "$env:LOCALAPPDATA\Microsoft\dotnet"`, otherwise it looks in `C:\Program Files\dotnet` (only .NET 8) and shows a "install .NET" dialog instead of the editor.
+- **Tests don't catch XAML resource errors.** A missing `StaticResource` key or a bad merged dictionary only fails at startup. After theme/XAML changes, launch the app (temp `SNAGITOPEN_DATA`) and check that the window title is "Untitled - SnagItOpen".
+- **Harness: parallel tool calls can be dropped** ("Tool call skipped: upstream generated invalid or incomplete parameters"). Send one tool call at a time, always with a full absolute path, and write big files in chunks.
 
 ## 3. Solution layout
 
