@@ -36,6 +36,29 @@ public class TextLayoutTests
         });
     }
 
+    [Theory]
+    [InlineData(TextSizing.AutoWidth)]
+    [InlineData(TextSizing.AutoHeight)]
+    [InlineData(TextSizing.Fixed)]
+    public void Fitting_rotated_text_keeps_its_document_centre(TextSizing sizing)
+    {
+        ThemeTokenTests.RunSta(() =>
+        {
+            var text = new TextAnnotation
+            {
+                Text = "Rotated text grows across several lines", FontSize = 40,
+                Sizing = sizing, VerticalAlign = TextVAlign.Middle, Rotation = 45,
+                Bounds = new RectD(100, 200, 100, 10),
+            };
+            var fit = AnnotationRenderer.Fit(text);
+            Assert.NotEqual((text.Bounds.Width, text.Bounds.Height), (fit.Bounds.Width, fit.Bounds.Height));
+            Assert.Equal(text.Bounds.Center.X, fit.Bounds.Center.X, 6);
+            Assert.Equal(text.Bounds.Center.Y, fit.Bounds.Center.Y, 6);
+            Assert.Equal(text.Rotation, fit.Rotation);
+            return true;
+        });
+    }
+
     [Fact]
     public async Task Middle_aligned_label_has_equal_space_above_and_below_its_capitals()
     {

@@ -328,6 +328,15 @@ public static class AnnotationRenderer
     /// </summary>
     public static TextAnnotation Fit(TextAnnotation t)
     {
+        var fit = FitAnchoredTopLeft(t);
+        // Rotation is about the box centre: keep that centre so a rotated box grows in place instead of drifting.
+        if (t.Rotation == 0 || fit.Bounds == t.Bounds) return fit;
+        var c = t.Bounds.Center;
+        return fit with { Bounds = fit.Bounds with { X = c.X - fit.Bounds.Width / 2, Y = c.Y - fit.Bounds.Height / 2 } };
+    }
+
+    private static TextAnnotation FitAnchoredTopLeft(TextAnnotation t)
+    {
         if (t.Bounds.IsEmpty) return t;
         double k = IsEllipse(t) ? Math.Sqrt(0.5) : 1;
         if (t.Sizing == TextSizing.AutoWidth)

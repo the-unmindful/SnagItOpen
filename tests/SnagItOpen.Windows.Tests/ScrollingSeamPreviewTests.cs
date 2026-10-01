@@ -16,6 +16,17 @@ public sealed class ScrollingSeamPreviewTests
     }
 
     [Fact]
+    public void Sticky_footer_preview_shows_the_same_pixels_as_final_composition()
+    {
+        var previous = new PixelBuffer(1, 10, [100, 101, 2, 3, 4, 5, 6, 7, 200, 201]);
+        var pending = new PixelBuffer(1, 10, [100, 101, 5, 6, 7, 8, 9, 10, 200, 201]);
+        // Full overlap: three repeated content rows plus the two-row header and footer.
+        var composed = ScrollComposer.Compose([(previous, 0), (pending, 7)], header: 2, footer: 2);
+        var preview = ScrollingSeamPreview.Build(previous, pending, 7, header: 2, footer: 2);
+        Assert.Equal(composed.Data, preview.Data);
+    }
+
+    [Fact]
     public void Preview_keeps_at_least_one_next_row_and_does_not_mutate_source_frames()
     {
         var previous = new PixelBuffer(1, 2, [1, 2]);

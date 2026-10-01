@@ -19,6 +19,9 @@ public sealed class StyleGallery : UserControl
     private readonly Action _refreshProperties;
     public const string StyleIdFormat = "SnagItOpen.Style", StyleKindFormat = "SnagItOpen.StyleKind";
     private readonly WrapPanel _tiles = new();
+    private readonly System.Windows.Threading.DispatcherTimer _clickTimer = new() { Interval = TimeSpan.FromMilliseconds(GetDoubleClickTime()) };
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetDoubleClickTime();
+    private GalleryEntry? _pendingApply; private bool _mouseClick, _suppressNextClick;
     private readonly StyleThumbnailRenderer _renderer = new();
     private readonly List<(string Id, Button Button)> _buttons = [];
     private string _kind = "";
@@ -30,6 +33,7 @@ public sealed class StyleGallery : UserControl
     public StyleGallery(AppServices services, EditorViewModel vm, Func<Annotation?> sample, Action refreshProperties)
     {
         _services = services; _vm = vm; _sample = sample; _refreshProperties = refreshProperties;
+        _clickTimer.Tick += (_, _) => { _clickTimer.Stop(); if (_pendingApply is { } entry) { _pendingApply = null; Apply(entry); } };
         Content = _tiles; Margin = new Thickness(0, 4, 0, 12); AutomationProperties.SetName(this, "Style gallery");
         Loaded += (_, _) => { _services.AnnotationStyles.Changed += OnStylesChanged; _theme = ThemeService.Current; if (_theme is not null) _theme.ThemeChanged += OnThemeChanged; Refresh(_kind, true); };
         Unloaded += (_, _) => { _services.AnnotationStyles.Changed -= OnStylesChanged; if (_theme is not null) _theme.ThemeChanged -= OnThemeChanged; _theme = null; };
@@ -51,11 +55,21 @@ public sealed class StyleGallery : UserControl
             if (entry.Style is MagnifierAnnotation) button.Content = ControlsIcon("Magnify");
             else button.Content = new Image { Source = _renderer.Render(entry.Style, ThemeService.Current?.Effective ?? EffectiveTheme.Light, VisualTreeHelper.GetDpi(this).DpiScaleX), Width = 60, Height = 40, Stretch = Stretch.Uniform };
             button.ToolTip = $"{entry.Name}\n{description}\nDouble-click or drag onto the canvas to insert.";
-            button.MouseDoubleClick += (_, e) => { _vm.RequestInsertStyle(entry.Style); e.Handled = true; };
-            button.Click += (_, _) => Apply(entry);
+            button.MouseDoubleClick += (_, e) =>
+            {
+                // The first click of a double-click must not restyle the selection: cancel its deferred apply.
+                _clickTimer.Stop(); _pendingApply = null; _suppressNextClick = true;
+                _vm.RequestInsertStyle(entry.Style); e.Handled = true;
+            };
+            button.Click += (_, _) =>
+            {
+                if (_suppressNextClick) { _suppressNextClick = false; _mouseClick = false; return; } // second click of a double-click
+                if (!_mouseClick) { Apply(entry); return; } // keyboard/automation: immediate
+                _mouseClick = false; _pendingApply = entry; _clickTimer.Stop(); _clickTimer.Start(); // wait: it may become a double-click
+            };
             button.ContextMenu = BuildMenu(entry);
             button.PreviewKeyDown += (_, e) => TileKey(button, entry, e);
-            button.PreviewMouseLeftButtonDown += (_, e) => { _dragStart = e.GetPosition(this); _dragId = entry.Id; };
+            button.PreviewMouseLeftButtonDown += (_, e) => { _dragStart = e.GetPosition(this); _dragId = entry.Id; _mouseClick = true; };
             button.PreviewMouseLeftButtonUp += (_, _) => { _dragStart = null; _dragId = null; };
             button.MouseMove += (_, e) =>
             {

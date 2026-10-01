@@ -141,7 +141,9 @@ public sealed class ScrollingSession<TFrame> where TFrame : class
         int content = luma.Height - _overlap.HeaderRows - _overlap.FooterRows;
         if (_frames.Count > 1 && content > 0 && _lastNotches > 0)
         {
-            double perNotch = Math.Max(1, content - overlap) / (double)_lastNotches;
+            // overlap is in full-frame rows (repeated content + header + footer): new rows = content - repeated content.
+            int repeated = Math.Max(0, overlap - _overlap.HeaderRows - _overlap.FooterRows);
+            double perNotch = Math.Max(1, content - repeated) / (double)_lastNotches;
             NextNotches = Math.Clamp((int)Math.Round(content * 0.6 / perNotch), 1, Options.MaxWheelNotches);
         }
         Changed?.Invoke();

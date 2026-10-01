@@ -138,6 +138,42 @@ public class ScrollingSessionTests
     }
 
     [Fact]
+    public async Task Automatic_step_measures_new_rows_without_subtracting_sticky_bands_twice()
+    {
+        const int w = 64, h = 100, header = 20, footer = 20, rowsPerNotch = 10;
+        var page = Page(w, 2000);
+        var banner = Page(w, header, 11);
+        var bottom = Page(w, footer, 12);
+        int top = 0;
+        var notchLog = new List<int>();
+        LumaImage Frame()
+        {
+            var data = Window(page, w, top, h).Data;
+            Array.Copy(banner, 0, data, 0, w * header);
+            Array.Copy(bottom, 0, data, w * (h - footer), w * footer);
+            return new LumaImage(w, h, data);
+        }
+        var clock = new FakeClock();
+        var session = new ScrollingSession<LumaImage>(x => x, new ScrollingOptions
+        {
+            MaxFrames = 3,
+            Overlap = new OverlapOptions { HeaderRows = header, FooterRows = footer, MinTexture = 0 },
+        });
+        bool Scroll(int notches)
+        {
+            notchLog.Add(notches);
+            top += notches * rowsPerNotch;
+            return true;
+        }
+        var reason = await session.RunAutomaticAsync(_ => Task.FromResult(Frame()), Scroll, clock.Delay,
+            () => clock.Now, CancellationToken.None);
+        Assert.Equal(ScrollStopReason.FrameLimit, reason);
+        Assert.Equal(new[] { 3, 4 }, notchLog); // 60 content rows, target 36 new rows at 10 rows/notch.
+        Assert.Equal(70, session.Frames[1].Overlap); // 30 content rows + 20 header + 20 footer.
+        Assert.Equal(h + top, session.OutputHeight);
+    }
+
+    [Fact]
     public async Task Automatic_mode_recovers_from_an_overshoot_by_scrolling_back()
     {
         const int w = 64, h = 100, rowsPerNotch = 40, pageH = 400;

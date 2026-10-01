@@ -316,7 +316,7 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
             _ => "no matching rows were found",
         };
         var answer = SeamDialog.Show(this, pending.Height, m is { Overlap: > 0 } ? m.Overlap : 0,
-            renderPreview: overlap => ScrollingSeamPreview.Build(previous, pending, overlap).ToBitmap(),
+            renderPreview: overlap => ScrollingSeamPreview.Build(previous, pending, overlap, header: _session.HeaderRows, footer: _session.FooterRows).ToBitmap(),
             note: $"Automatic matching was unsure because {why}. Adjust the overlap until the After preview is seamless, then click Add frame. Cancel leaves this frame out; the capture continues.", allowZero: true,
             beforePreview: ScrollingSeamPreview.Build(previous, pending, 0).ToBitmap(),
             title: "Line up the next frame", intro: "This frame is part of your scrolling capture (not the image on the canvas). Rows it repeats from the previous frame are removed.", primary: "Add frame");

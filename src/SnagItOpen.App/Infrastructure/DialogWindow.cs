@@ -32,7 +32,9 @@ public class DialogWindow : Window
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape) { Finish(false); e.Handled = true; }
-            else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None && PrimaryButton.IsEnabled && e.OriginalSource is not TextBox { AcceptsReturn: true })
+            // Enter on a focused Cancel/secondary button must activate that button, never the (possibly destructive) primary one.
+            else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None && PrimaryButton.IsEnabled && e.OriginalSource is not TextBox { AcceptsReturn: true }
+                     && !(e.OriginalSource is System.Windows.Controls.Primitives.ButtonBase focused && !ReferenceEquals(focused, PrimaryButton)))
             {
                 if (Validate?.Invoke() != false) { Accepted?.Invoke(); Finish(true); }
                 e.Handled = true;
