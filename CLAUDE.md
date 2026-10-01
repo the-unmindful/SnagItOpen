@@ -4,20 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Token budget
 
-The user is on a $20 subscription. Be token-frugal: read files by range (Grep first), avoid re-reading, don't spawn subagents unless asked, keep replies short, and focus on what matters most.
+The user is on a $20 subscription. Be token-frugal: Grep first and read by range, don't re-read, don't spawn subagents unless asked, keep replies short, focus on what matters.
 
-## Read first
+## Read first (every new session)
 
-`AGENTS.md` and `docs/HANDOFF.md` are authoritative. Read `docs/HANDOFF.md` in full before changing anything: it holds the current status, expected test counts, the user's agreed design decisions (section 4, don't reverse without asking) and past mistakes (section 2a). Update it at the end of each work session (status, commit, test counts).
+1. `docs/HANDOFF.md` in full: status, test counts, user decisions (§4: don't reverse without asking), pitfalls (§2a).
+2. The active plan in `docs/superpowers/plans/` (the newest file): task status and what is not done.
+3. The "Change safety" section below, before touching code.
 
-SnagItOpen is an offline Windows screenshot capture and image editor (Snagit-like), C# / .NET 10 / WPF, no third-party runtime packages. Version 0.2.0 preview; UI/UX upgrade work lives on branch `ui-upgrade`.
+SnagItOpen: offline Windows screenshot capture and image editor (Snagit-like), C# / .NET 10 / WPF, no third-party runtime packages. Version 0.2.0 preview on branch `ui-upgrade`.
 
 ## Environment
 
-- Shell is Windows PowerShell 5.1: no `&&` (use `;` or `if ($?) { }`), no `rg` (use the Grep tool). Use single quotes for literals containing `$`.
-- .NET SDK 10.0.401 is installed per user and PATH does not persist between shell calls. Prefix commands with:
-  `$env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH";`
-  To launch the Debug exe, also set `$env:DOTNET_ROOT = "$env:LOCALAPPDATA\Microsoft\dotnet"`.
+- Windows PowerShell 5.1: no `&&` (use `;`), no `rg` (use Grep), single quotes for literals containing `$`. `R` is the `Invoke-History` alias: never name a helper `R`.
+- PATH does not persist: prefix commands with `$env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH";`. To launch a Debug exe, also set `$env:DOTNET_ROOT` to the same folder.
 
 ## Commands
 
@@ -25,38 +25,43 @@ SnagItOpen is an offline Windows screenshot capture and image editor (Snagit-lik
 dotnet build .\SnagItOpen.slnx -c Debug /m:1 /nr:false
 dotnet test .\tests\SnagItOpen.Core.Tests\SnagItOpen.Core.Tests.csproj -c Debug --no-build
 dotnet test .\tests\SnagItOpen.Windows.Tests\SnagItOpen.Windows.Tests.csproj -c Debug --no-build
-# single test / class:
-dotnet test .\tests\SnagItOpen.Core.Tests\SnagItOpen.Core.Tests.csproj -c Debug --no-build --filter "FullyQualifiedName~ClassOrMethodName"
-dotnet run --project .\src\SnagItOpen.App\SnagItOpen.App.csproj
-.\scripts\publish.ps1    # Release build + both suites + self-contained win-x64 zip and SHA-256 in artifacts\
+dotnet test <project> -c Debug --no-build --filter "FullyQualifiedName~ClassOrMethodName"   # single test
+.\scripts\publish.ps1   # Release build + both suites + artifacts\win-x64 + zip + SHA-256
 ```
 
-- Gate: build plus both suites after each coherent batch (not after every minor edit); full `publish.ps1` before packaging. Expect 0 warnings, 0 errors and test counts at or above those in `docs/HANDOFF.md`. Fix nullable warnings rather than suppressing them.
-- Never run a build/test in the same parallel tool batch as the edit it verifies (stale passes have happened). After several edits, check `git diff --stat`.
-- A running `SnagItOpen.exe` from `bin\` locks output (MSB3027/MSB3021). Stop only your own smoke process (check PID and path), never the user's installed app.
-- Smoke runs must set `$env:SNAGITOPEN_DATA` to a temp folder under `E:\Misc\test\opencode-trial\temp\opencode`. After XAML/theme changes, launch the app and confirm the window title is "Untitled - SnagItOpen": missing resource keys only fail at runtime.
-- `SnagItOpen.Windows.Tests` needs an interactive desktop (real GDI capture leak test); WPF-object tests must run on STA (`ThemeTokenTests.RunSta`).
-- `scripts\install.ps1` replaces the user's installed copy: only run it when asked. Commit locally in small steps (`Area: what changed`); never push unless asked.
+- If a running app locks `bin\Debug` (MSB3027), build and test with `-c Release` instead. Never stop the user's process. Only stop your own smoke process, after checking its PID and path.
+- The app is single-instance: while the user runs any copy, a smoke launch only activates theirs. Check `Get-Process SnagItOpen` first.
+- Smoke run: set `$env:SNAGITOPEN_DATA` to a folder under `E:\Misc\test\opencode-trial\temp\opencode`, launch, and expect the title "Untitled - SnagItOpen".
+- Review renders: setting `$env:SNAGITOPEN_EVIDENCE=<folder>` makes `ShellIntegrationTests` write PNGs (empty shell, and content with the annotation inspector). Look at them after any UI change.
+
+## Change safety (how not to break the app)
+
+Work loop: write a short plan entry, with status, in the active plan file → edit → **separate** step: build and both suites (never in the same parallel batch as the edit) → for UI changes, renders or a smoke run → commit `Area: what changed` → update the HANDOFF status and test counts. Commit locally only; never push or run `scripts\install.ps1` unless asked. For large features outside the approved PRD, plan first and get the user's approval.
+
+Edits by script: `.Replace()` fails **silently** when the file uses CRLF and the anchor uses LF. Normalise (`.Replace("`r`n","`n")`) and throw if the anchor is missing. Check `git diff --stat` after a batch.
+
+**Ripple map: when you change X, also update Y.**
+
+| Change | Also update |
+|---|---|
+| New field on an annotation (`Core/Documents/Annotations/Annotations.cs`) | Default must reproduce the old rendering, because old files lack the field (schema stays v2). `AnnotationStyle.Transfer`: keep target-owned fields (Id, Bounds, Text, GroupId, Sizing…). `AnnotationStyleStore.Strip`: drop per-instance fields from saved styles. `DocumentOps` duplicate/paste (remap ids such as GroupId). Renderer (`Imaging/Rendering`, shared by screen and export). `AnnotationPropertiesPanel`. `StyleThumbnailRenderer.Sample`. Tests. |
+| Moving annotations | User moves use `Annotation.Translate`; document-wide transforms (scale, normalise) use `MapGeometry`/`Offset`. The magnifier overrides `Translate`. |
+| Text box geometry or fonts | Always size boxes through `AnnotationRenderer.Fit`. The in-place editor (`MainWindow.PositionTextEditor`) must use `TextArea`/`GlyphOrigin`, the same as the renderer. |
+| New setting | `AppSettings`: default plus a line in `Sanitize` (no version bump for an optional field). Preferences page (`Shell/Settings/PreferencesPages.cs`). A menu item if it's a quick toggle. UI-only state goes in `UiState` (`ui-state.json`), not settings. |
+| New command or shortcut | Menu XAML plus a handler, the key switch in `MainWindow.xaml.cs`, the context menu if it acts on the selection, `ToolCatalog` for tools. The palette and shortcut tests must pass. |
+| Capture result | Deliver only through `EditorViewModel.AddCapturesAsync`, which handles destination, auto-copy and the library. Never add layers directly. |
+| Scrolling stitching | `OverlapMatcher` overlap = full-frame rows (content + header + footer). `ScrollComposer.Compose` skips `overlap - footer` rows. Sticky bands live in `ScrollingSession`. |
+| Any XAML or UI | Colours only via `DynamicResource`/`SetResourceReference`, with the key in all three `Tokens.*.xaml` files. Implicit styles do **not** reach subclasses (`SetResourceReference(StyleProperty, typeof(Base))`), controls inside a `ToolBar` (they use the `ToolBar.*StyleKey` styles), or `Label`'s colour (it has its own style). Icon-only buttons: `IconButton` with `ShowLabel=false`, guarded by the clip test. A keyed style must be defined before any `StaticResource` that uses it. Put UI text in XAML, not `CanvasView.OnRender`. |
+| Bitmaps at DPI | A `RenderTargetBitmap` with DPI = 96×scale already scales the drawing: don't add a ScaleTransform as well. |
+
+Invariants (HANDOFF §4): annotations are canvas objects above all images and independent of them (groups are annotation-only); redactions never rotate, are always opaque and always render; content outside a locked canvas is never exported, copied or pinned; themes never change document pixels or export output.
 
 ## Architecture
 
-Dependency direction: `Core` (net10.0, pure logic, no WPF) ← `Storage` (net10.0), `Imaging`, `Windows` (net10.0-windows) ← `App` (WPF). Put logic in Core where possible so it is testable in `Core.Tests`; `Windows.Tests` references every project including App.
+`Core` (pure logic, no WPF) ← `Storage`, `Imaging`, `Windows` ← `App` (WPF). Put logic in Core where possible; `Windows.Tests` references every project.
 
-- **Core**: document model and annotations (`Documents/Annotations/`: model, `AnnotationGeometry` for handles/hit-testing/drags, `AnnotationStyle`), `Editing/DocumentOps.cs`, history, layout (vertical/horizontal/free combine), geometry, capture state machines, stitching (scrolling capture).
-- **Storage**: asset store, `.sio` projects (schema v2; v1 upgraded on load, newer rejected), settings (v3 with migrations) plus separate `ui-state.json`, presets, styles, capture library, autosave/recovery.
-- **Imaging**: STA imaging dispatcher, importer, effects, export, and the single renderer shared by on-screen preview and export (don't diverge them).
-- **Windows**: Win32 interop: monitors, GDI capture, window catalog, clipboard, global hotkeys, tray, single instance, scroll input.
-- **App**: `Shell/MainWindow.xaml(.cs)` (menus, commands, shortcuts, tray, hotkeys; 1,500+ lines, so read by range and extract new classes instead of growing it), `Editor/CanvasView.cs` (rendering and all pointer gestures), `Editor/EditorViewModel.cs` (document/history state; every edit goes through `Commit` = one undo step), plus `Capture/`, `Controls/`, `Library/`, `Infrastructure/`, `Themes/`.
-
-Key invariants (details in HANDOFF section 4):
-- Annotations are canvas objects in document pixels, always above all images, independent of image crop/move/delete; stacking reorders annotations only among themselves.
-- Redactions never rotate, are always opaque and always render (even when hidden) so export never leaks covered pixels.
-- Content outside a locked canvas is never exported, copied or pinned.
-
-## UI and theming
-
-`DESIGN.md` indexes the visual system; the approved PRD is `docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md`. Plan and get user approval for large features outside it.
-- Theme tokens live in `Themes/Tokens.{Light,Dark,HighContrast}.xaml` and metrics in `Themes/Metrics.xaml`. Use `DynamicResource` (or `SetResourceReference` in code) for anything theme-dependent; `StaticResource` won't follow a theme swap. Every key must exist in all token dictionaries (guarded by the token-parity test).
-- Put UI text in XAML, not in `CanvasView.OnRender` (drawn text sits under XAML children).
-- A WPF element can have only one parent: detach (`Child = null`) before re-parenting.
-- Themes never recolor document pixels or change export output.
+- **Core**: annotation model, `AnnotationGeometry` (handles, hit tests), `AnnotationStyle`, `Editing/DocumentOps.cs` (every document edit), layout, capture sessions (`Capture/Sessions.cs`), stitching.
+- **Storage**: assets, `.sio` projects (schema v2), settings (v3), `ui-state.json`, built-in styles and the style gallery, library, autosave.
+- **Imaging**: STA dispatcher, import, effects, export, `ScrollComposer`, and the renderer shared by preview and export.
+- **Windows**: Win32 capture, monitors, clipboard, hotkeys, tray, single instance, scroll input.
+- **App**: `Shell/MainWindow.xaml(.cs)` and `MainWindow.Upgrade.cs` (1,500+ lines: read by range and extract new classes). `Editor/CanvasView.cs` (rendering and every gesture). `Editor/EditorViewModel.cs` (every edit goes through `Commit`, one undo step). `Editor/InspectorPanel.cs` and `AnnotationPropertiesPanel.cs`. `Controls/` for shared controls, `Themes/` for tokens and `Controls.xaml`. `DESIGN.md` and the PRD (`docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md`) define the visual system.

@@ -1,6 +1,6 @@
 # Agent instructions for SnagItOpen
 
-Before doing anything in this repository, read `docs/HANDOFF.md` in full. It holds the working rules, the verification gate, the decisions already agreed with the user, and what to do next.
+Before doing anything in this repository, read `docs/HANDOFF.md` in full, then the "Change safety" section of `CLAUDE.md` (the ripple map of what else to update for each kind of change). It holds the working rules, the verification gate, the decisions already agreed with the user, and what to do next.
 
 Non-negotiables:
 - Windows PowerShell 5.1 (no `&&`, no `rg`).

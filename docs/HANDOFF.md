@@ -29,6 +29,8 @@ A local, offline Windows screenshot capture and image editor, similar to Snagit.
 
 ### 2a. Technical learnings (mistakes not to repeat)
 
+- **Cross-cutting rules are in `CLAUDE.md` > "Change safety" (ripple map).** Add a row there whenever a change turns out to need updates elsewhere. From the 2026-10-01 session: CRLF anchors make script `.Replace` miss silently; the matcher's overlap counts header and footer rows; the style transfer and style store had to learn about new fields; `ToolBar` and `Label` bypass the implicit styles; `RenderTargetBitmap` DPI already scales; a user's running copy blocks Debug builds and smoke launches.
+
 - **WPF re-parenting crashes.** A `UIElement` can have only one logical/visual parent. Moving `Child` from one `Border` to another without first setting the old parent's `Child = null` throws `InvalidOperationException` ("Specified element is already the logical child of another element"). This was the colour picker crash (`be8b096`, `ColorPicker.cs` `_after.Child`). Detach first, or build a new element.
 - **Overlapping drawn text and XAML controls.** Text drawn in `CanvasView.OnRender` sits under XAML children and cannot reflow. The empty-canvas hint overlapped the start-card buttons (`c4f8325`). Put UI text in XAML, not in `OnRender`.
 - **Stale test results from parallel batches.** A build/test launched in the same tool batch as an edit can run first and report a pass on old code. Always edit, then verify in a later step.
