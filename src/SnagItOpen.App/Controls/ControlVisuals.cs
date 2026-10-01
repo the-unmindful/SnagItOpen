@@ -10,7 +10,14 @@ internal static class ControlVisuals
 {
     public static Path Icon(Geometry? geometry, FrameworkElement owner, double size = 16)
     {
-        var path = new Path { Data = geometry, Width = size, Height = size, Stretch = Stretch.Uniform, StrokeThickness = 1.5, IsHitTestVisible = false };
+        // Geometries are authored on a 16x16 grid: never stretch them (that changes size and weight per icon).
+        var path = new Path
+        {
+            Data = geometry, Width = 16, Height = 16, Stretch = Stretch.None, StrokeThickness = 1.5, IsHitTestVisible = false,
+            StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, SnapsToDevicePixels = true,
+        };
+        if (Math.Abs(size - 16) > 0.01) path.LayoutTransform = new ScaleTransform(size / 16, size / 16);
         path.SetBinding(Shape.StrokeProperty, new Binding("Foreground") { Source = owner });
         return path;
     }
@@ -22,10 +29,10 @@ internal static class ControlVisuals
         System.Windows.Automation.AutomationProperties.SetAcceleratorKey(element, shortcut);
     }
 
-    public static StackPanel IconLabel(Geometry? icon, string label, bool showLabel, FrameworkElement owner)
+    public static StackPanel IconLabel(Geometry? icon, string label, bool showLabel, FrameworkElement owner, double iconSize = 16)
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal };
-        if (icon is not null) panel.Children.Add(Icon(icon, owner));
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        if (icon is not null) panel.Children.Add(Icon(icon, owner, iconSize));
         if (showLabel && !string.IsNullOrWhiteSpace(label)) panel.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(icon is null ? 0 : 6, 0, 0, 0) });
         return panel;
     }

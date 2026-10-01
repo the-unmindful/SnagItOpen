@@ -166,7 +166,7 @@ public partial class MainWindow
         var drag = CommandButton("Drag out", "Icon.DragOut", "Enter", (_, _) => { });
         drag.PreviewMouseLeftButtonDown += OnDragOutDown; drag.PreviewMouseMove += OnDragOutMove; drag.KeyDown += OnDragOutKey;
         var copy = new SplitButton { Label = "Copy", Icon = TryFindResource("Icon.Copy") as Geometry, Shortcut = "Ctrl+Shift+C" };
-        copy.PrimaryButton.SetResourceReference(StyleProperty, "PrimaryButton");
+        copy.SetStyleKey("PrimaryButton");
         copy.Click += OnCopy; copy.Menu = new ContextMenu();
         AddItem(copy.Menu, "Copy image", () => OnCopy(this, new RoutedEventArgs()));
         AddItem(copy.Menu, "Copy as file", () => _ = CopyAsFileAsync());
@@ -190,7 +190,7 @@ public partial class MainWindow
         var button = new IconButton { Label = label, Shortcut = shortcut, Icon = TryFindResource(icon) as Geometry, Margin = new Thickness(2, 0, 2, 0) };
         button.Click += run; CommandBar.Children.Add(button); _commandButtons.Add(button); return button;
     }
-    private void Divider() { var line = new Border { Width = 1, Margin = new Thickness(8, 2, 8, 2) }; line.SetResourceReference(Border.BackgroundProperty, "Stroke.Divider"); CommandBar.Children.Add(line); }
+    private void Divider() { var line = new Border { Width = 1, Height = 20, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 6, 0) }; line.SetResourceReference(Border.BackgroundProperty, "Stroke.Divider"); CommandBar.Children.Add(line); }
     private string RegionGesture() => ActiveHotkeys.TryGetValue(HotkeyActions.Region, out var key) ? key.ToString() : S.GestureFor(HotkeyActions.Region);
     private void RefreshCaptureSplitMenu()
     {

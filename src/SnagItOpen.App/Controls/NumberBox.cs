@@ -25,7 +25,7 @@ public sealed class NumberBox : UserControl
     public event Action<double>? Preview;
     public event Action<double>? Committed;
     public event Action<bool>? ValidityChanged;
-    private readonly TextBlock _label = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.SizeWE };
+    private readonly TextBlock _label = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.SizeWE, Width = 80, TextTrimming = TextTrimming.CharacterEllipsis };
     private bool _updating, _scrubbing, _changedDuringScrub, _startMixed;
     private Point _start;
     private double _startValue;
@@ -71,7 +71,7 @@ public sealed class NumberBox : UserControl
     private void Refresh()
     {
         if (Input is null || _label is null) return;
-        _updating = true; _label.Text = Label; _label.Visibility = string.IsNullOrEmpty(Label) ? Visibility.Collapsed : Visibility.Visible;
+        _updating = true; _label.Text = Label; _label.ToolTip = Label; _label.Visibility = string.IsNullOrEmpty(Label) ? Visibility.Collapsed : Visibility.Visible;
         Input.Text = NumberInput.Format(Value, IsMixed, CultureInfo.CurrentCulture);
         string accessibleLabel = string.IsNullOrWhiteSpace(Label) ? AutomationProperties.GetName(this) : Label;
         if (!string.IsNullOrWhiteSpace(accessibleLabel)) AutomationProperties.SetName(Input, accessibleLabel);

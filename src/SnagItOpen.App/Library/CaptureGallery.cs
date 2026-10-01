@@ -1,3 +1,4 @@
+using SnagItOpen.App.Controls;
 using System.Collections.Specialized;
 using System.IO;
 using System.Windows;
@@ -157,7 +158,7 @@ internal sealed class CaptureGallery : DockPanel
     private readonly TextBlock _count;
     private readonly Dictionary<Guid, BitmapSource?> _thumbs = [];
     private readonly Grid _body;
-    private readonly Button _collapse;
+    private readonly IconButton _collapse;
 
     public CaptureGallery(AppServices services, EditorViewModel vm, Action openLibrary)
     {
@@ -167,12 +168,12 @@ internal sealed class CaptureGallery : DockPanel
         LastChildFill = true;
 
         SetResourceReference(BackgroundProperty, "Bg.SurfaceAlt");
-        var header = new DockPanel { Margin = new Thickness(6, 0, 6, 0), Height = 28 };
-        _collapse = new Button { Content = "▾", Padding = new Thickness(4, 0, 4, 0), MinHeight = 22, Margin = new Thickness(0, 0, 6, 0), ToolTip = "Collapse recent captures" };
-        AutomationProperties.SetName(_collapse, "Collapse recent captures");
+        var header = new DockPanel { Margin = new Thickness(6, 0, 6, 0), Height = 32 };
+        _collapse = new IconButton { Label = "Collapse recent captures", ShowLabel = false, Width = 24, Height = 24, MinWidth = 24, MinHeight = 24, Margin = new Thickness(0, 0, 4, 0) };
         _collapse.Click += (_, _) => SetCollapsed(!_services.UiState.CaptureGalleryCollapsed);
         DockPanel.SetDock(_collapse, Dock.Left); header.Children.Add(_collapse);
-        var manage = new Button { Content = "Open library", Padding = new Thickness(8, 0, 8, 0), MinHeight = 22, ToolTip = "Open library (Ctrl+L)" };
+        var manage = new Button { Content = "Open library", Padding = new Thickness(8, 0, 8, 0), MinHeight = 24, ToolTip = "Open library (Ctrl+L)" };
+        manage.SetResourceReference(StyleProperty, "SubtleButton");
         AutomationProperties.SetName(manage, "Open capture library"); AutomationProperties.SetAcceleratorKey(manage, "Ctrl+L");
         manage.Click += (_, _) => openLibrary();
         DockPanel.SetDock(manage, Dock.Right);
@@ -260,10 +261,7 @@ internal sealed class CaptureGallery : DockPanel
     private void SetCollapsed(bool collapsed, bool persist = true)
     {
         if (persist) _services.SaveUiState(_services.UiState with { CaptureGalleryCollapsed = collapsed });
-        Height = collapsed ? 28 : 132;
-        _body.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
-        _collapse.Content = collapsed ? "▸" : "▾";
-        AutomationProperties.SetName(_collapse, collapsed ? "Expand recent captures" : "Collapse recent captures");
+        ApplyLayout();
     }
 
     private ContextMenu BuildContextMenu()
@@ -291,7 +289,20 @@ internal sealed class CaptureGallery : DockPanel
         foreach (var gone in _thumbs.Keys.Where(k => entries.All(e => e.Id != k)).ToList()) _thumbs.Remove(gone);
         _list.ItemsSource = items;
         _empty.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        _count.Text = items.Count == 0 ? "" : items.Count == 1 ? "1 capture" : $"{items.Count} captures";
+        _count.Text = items.Count == 0 ? "None yet" : items.Count == 1 ? "1 capture" : $"{items.Count} captures";
+        _isEmpty = items.Count == 0; ApplyLayout();
+    }
+
+    private bool _isEmpty = true;
+    // An empty strip shows only its header so the canvas keeps the space; it opens by itself on the first capture.
+    private void ApplyLayout()
+    {
+        bool userCollapsed = _services.UiState.CaptureGalleryCollapsed, open = !userCollapsed && !_isEmpty;
+        Height = open ? 132 : 32;
+        _body.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        _collapse.Visibility = _isEmpty ? Visibility.Collapsed : Visibility.Visible;
+        _collapse.Icon = TryFindResource(userCollapsed ? "Icon.ChevronRight" : "Icon.ChevronDown") as Geometry;
+        _collapse.Label = userCollapsed ? "Expand recent captures" : "Collapse recent captures";
     }
 
     private BitmapSource? Thumb(CaptureEntry e)

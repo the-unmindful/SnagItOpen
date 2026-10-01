@@ -18,7 +18,7 @@ A local, offline Windows screenshot capture and image editor, similar to Snagit.
   dotnet test .\tests\SnagItOpen.Windows.Tests\SnagItOpen.Windows.Tests.csproj -c Debug --no-build
   .\scripts\publish.ps1          # Release build + both suites + package in artifacts\
   ```
-  Expected at hand-off: **0 warnings, 0 errors, 211 Core + 226 Windows = 437 tests passing.** Final exact commands and release evidence are in `docs/evidence/verification.md`.
+  Expected at hand-off: **0 warnings, 0 errors, 211 Core + 227 Windows = 438 tests passing.** Final exact commands and release evidence are in `docs/evidence/verification.md`.
 - **Before building, stop only your own smoke process if it locks the output.** Verify its PID and executable path under this repo's `bin\` or `artifacts\`. Do not terminate the user's installed app or all processes with the same name.
 - **Smoke runs must use a temp data folder:** set `$env:SNAGITOPEN_DATA` to a folder under `E:\Misc\test\opencode-trial\temp\opencode`, so real user data is never touched.
 - **Don't run a build/test in the same parallel batch as the file edit it should check.** It can run before the edit lands and report a stale pass. This happened several times in the first session.
@@ -84,6 +84,8 @@ Done (all committed; see `git log --oneline`):
 - Fixes and extras: colour picker crash, image edge panel, custom defaults, multi-select, drag-duplicate, copy/paste style, installer, close-to-tray, start with Windows, shortcut recorder, drag the result out.
 - App icon: red rounded square with a white "S" (`src/SnagItOpen.App/Assets/SnagItOpen.ico`, 8 sizes 16–256). Regenerate with `.\scripts\make-icon.ps1`. Set as `<ApplicationIcon>`, so exe, taskbar, windows, shortcuts and tray all use it. The tray loads the frame at `SmallIconSize`, so it stays sharp at high DPI.
 - Empty-canvas start card (`MainWindow.xaml`, inside the canvas `Grid`): replaces the old drawn text that the buttons overlapped. Shows Capture region / Import / Paste buttons and a shortcuts list; the global hotkey labels come from the registered bindings (`UpdateStartCardKeys`). It is bound to `IsEmpty`, so it disappears as soon as anything is added. `CanvasView` now draws text only when content exists but is all hidden.
+
+UI polish (2026-10-01, after user feedback that the result looked clunky, with clipped X and chevron icons): plan `docs/superpowers/plans/2026-10-01-ui-polish-rectification.md` (V01–V24, with a status section at the top). Batch 1 is committed: icon clipping root cause, subtle buttons, themed templates (TextBox, ComboBox, Expander, ScrollBar, CheckBox, RadioButton, Tab, Slider), aligned inspector rows, status bar, layers and gallery polish, and the empty-canvas frame. Gate: **211 Core + 227 Windows = 438 passing, 0 warnings**. Smoke launch OK. Next: V24 content-state renders, then V15/V18.
 
 Upgrade completion:
 0. Local implementation commits: `3dc19de` (Core/storage/imaging foundations) and `d238e43` (editor/capture/desktop UI and Windows regressions). Documentation follows in the next local commit. Final Release verification: **437 passed, 0 failed/skipped, 0 warnings/errors**; package `artifacts/SnagItOpen-0.2.0-win-x64.zip` and checksum exist.

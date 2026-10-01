@@ -114,11 +114,13 @@
   <StatusBarItem HorizontalContentAlignment="Stretch"><DockPanel><Path x:Name="StatusIcon" Width="14" Height="14" Data="{DynamicResource Icon.Info}" Stroke="{DynamicResource Status.Info}" StrokeThickness="1.5" Stretch="Uniform" Margin="0,0,6,0" /><TextBlock Text="{Binding Status}" ToolTip="{Binding Status}" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite" /></DockPanel></StatusBarItem>
   <StatusBarItem HorizontalAlignment="Right"><StackPanel Orientation="Horizontal">
    <TextBlock Text="{Binding SelectionInfo}" VerticalAlignment="Center" Margin="0,0,12,0" />
-   <Button Content="{Binding CanvasSize}" Click="OnCanvasSize" ToolTip="Canvas properties" />
-   <Button Content="−" Click="OnZoomOut" AutomationProperties.Name="Zoom out" />
-   <ui:NumberBox x:Name="ZoomBox" Width="76" Minimum="10" Maximum="800" Value="100" AutomationProperties.Name="Zoom percent" />
-   <Button Content="+" Click="OnZoomIn" AutomationProperties.Name="Zoom in" />
-   <Button Content="▾" Click="OnZoomMenu" AutomationProperties.Name="Zoom options" />
+   <Button Style="{DynamicResource SubtleButton}" MinHeight="24" Padding="8,2" Content="{Binding CanvasSize}" Click="OnCanvasSize" ToolTip="Canvas properties" Margin="0,0,8,0" />
+   <Border Width="1" Height="16" Background="{DynamicResource Stroke.Divider}" Margin="0,0,8,0" />
+   <ui:IconButton Label="Zoom out" ShowLabel="False" Icon="{DynamicResource Icon.Minus}" Width="24" Height="24" MinWidth="24" MinHeight="24" Click="OnZoomOut" />
+   <ui:NumberBox x:Name="ZoomBox" Width="52" Minimum="10" Maximum="800" Value="100" AutomationProperties.Name="Zoom percent" />
+   <TextBlock Text="%" VerticalAlignment="Center" Margin="3,0,2,0" Foreground="{DynamicResource Text.Secondary}" />
+   <ui:IconButton Label="Zoom options" ShowLabel="False" Icon="{DynamicResource Icon.ChevronDown}" IconSize="12" Width="20" Height="24" MinWidth="20" MinHeight="24" Click="OnZoomMenu" />
+   <ui:IconButton Label="Zoom in" ShowLabel="False" Icon="{DynamicResource Icon.Plus}" Width="24" Height="24" MinWidth="24" MinHeight="24" Click="OnZoomIn" />
   </StackPanel></StatusBarItem>
  </StatusBar>
  <Grid x:Name="WorkspaceGrid">
@@ -128,13 +130,13 @@
             <TabControl x:Name="LeftTabs" Grid.Column="1" Margin="4" Padding="0">
             <TabItem Header="Images">
             <DockPanel Margin="2">
-                <TextBlock DockPanel.Dock="Top" Text="Layout order" Opacity="0.7" Margin="2,2,0,4" />
-                <UniformGrid DockPanel.Dock="Bottom" Rows="1" Margin="0,4,0,0">
-                    <Button Content="Up" Click="OnMoveUp" ToolTip="Move earlier in the combine order (Alt+Up)" Margin="1" Padding="2,3" />
-                    <Button Content="Down" Click="OnMoveDown" ToolTip="Move later in the combine order (Alt+Down)" Margin="1" Padding="2,3" />
-                    <Button Content="Hide" Click="OnToggleHidden" ToolTip="Show or hide the selected image" Margin="1" Padding="2,3" />
-                    <Button Content="Remove" Click="OnDelete" ToolTip="Remove the selected images (Del)" Margin="1" Padding="2,3" />
-                </UniformGrid>
+                <TextBlock DockPanel.Dock="Top" Text="Layout order" FontSize="11" Foreground="{DynamicResource Text.Secondary}" Margin="2,0,0,4" />
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                    <ui:IconButton Label="Move earlier in the combine order" Shortcut="Alt+Up" ShowLabel="False" Icon="M8,13 L8,3 M4,7 L8,3 L12,7" Click="OnMoveUp" />
+                    <ui:IconButton Label="Move later in the combine order" Shortcut="Alt+Down" ShowLabel="False" Icon="M8,3 L8,13 M4,9 L8,13 L12,9" Click="OnMoveDown" />
+                    <ui:IconButton Label="Show or hide the selected image" ShowLabel="False" Icon="{DynamicResource Icon.Eye}" Click="OnToggleHidden" />
+                    <ui:IconButton Label="Remove the selected images" Shortcut="Del" ShowLabel="False" Icon="{DynamicResource Icon.Trash}" Click="OnDelete" />
+                </StackPanel>
                 <ListBox x:Name="ImageList" ItemsSource="{Binding Images}" SelectionMode="Extended" AllowDrop="True"
                          HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          AutomationProperties.Name="Images in combine order"
@@ -174,7 +176,7 @@
             </TabControl>
 
 
-  <Button x:Name="LayersStrip" Grid.Column="1" Content="›" Click="OnToggleLayers" Visibility="Collapsed" VerticalAlignment="Top" Height="36" AutomationProperties.Name="Expand Layers" />
+  <ui:IconButton x:Name="LayersStrip" Grid.Column="1" Label="Expand Layers" ShowLabel="False" Icon="{DynamicResource Icon.ChevronRight}" Click="OnToggleLayers" Visibility="Collapsed" VerticalAlignment="Top" Margin="4,8,4,0" />
   <GridSplitter Grid.Column="2" Width="4" HorizontalAlignment="Stretch" Background="{DynamicResource Stroke.Divider}" Focusable="False" />
   <DockPanel Grid.Column="3">
    <Border x:Name="GalleryHost" DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Stroke.Divider}" BorderThickness="0,1,0,0" />

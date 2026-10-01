@@ -12,12 +12,14 @@ public sealed class InspectorSection : Expander
     private string _key = "";
     public InspectorSection()
     {
-        Margin = new Thickness(0, 4, 0, 4); SetResourceReference(ForegroundProperty, "Text.Primary");
+        // Implicit styles are not inherited by subclasses: opt in to the themed Expander explicitly.
+        SetResourceReference(StyleProperty, typeof(Expander));
+        Margin = new Thickness(0, 2, 0, 0); SetResourceReference(ForegroundProperty, "Text.Primary");
         Expanded += (_, _) => Persist(); Collapsed += (_, _) => Persist();
     }
     public InspectorSection(AppServices services, string key, string title, bool expanded = true) : this()
     {
-        Header = new TextBlock { Text = title, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 4) };
+        Header = new TextBlock { Text = title, FontWeight = FontWeights.SemiBold };
         ConfigurePersistence(() => services.UiState, services.SaveUiState, key, expanded);
     }
     public void ConfigurePersistence(Func<UiState> read, Action<UiState> save, string key, bool expanded = true)

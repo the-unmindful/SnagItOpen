@@ -70,7 +70,7 @@ public sealed class InspectorPanel : UserControl
         alignment.SetBinding(ComboBox.SelectedItemProperty, new Binding(nameof(vm.Alignment)) { Mode = BindingMode.TwoWay });
         AddRow(layoutContent, "Alignment", alignment);
         AddCheck(layoutContent, "Match width / height", nameof(vm.MatchSize));
-        AddNumber(layoutContent, "Target size (0 = largest)", nameof(vm.TargetSize), 0, Limits.MaxDimension);
+        AddNumber(layoutContent, "Target size", nameof(vm.TargetSize), 0, Limits.MaxDimension, "Width (vertical) or height (horizontal) to scale every image to. 0 = the largest image.");
         AddCheck(layoutContent, "Allow enlarging smaller images", nameof(vm.AllowUpscale));
         layout.SetBinding(IsEnabledProperty, new Binding(nameof(vm.IsAutoLayout)));
 
@@ -176,9 +176,9 @@ public sealed class InspectorPanel : UserControl
     {
         var section = new InspectorSection(_services, title, title, expanded); parent.Children.Add(section); return section;
     }
-    private static void AddNumber(Panel panel, string label, string property, double min, double max)
+    private static void AddNumber(Panel panel, string label, string property, double min, double max, string? tip = null)
     {
-        var box = new NumberBox { Label = label, Minimum = min, Maximum = max };
+        var box = new NumberBox { Label = label, Minimum = min, Maximum = max, ToolTip = tip };
         box.SetBinding(NumberBox.ValueProperty, new Binding(property) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.Explicit });
         box.Committed += _ => box.GetBindingExpression(NumberBox.ValueProperty)?.UpdateSource(); panel.Children.Add(box);
     }
@@ -188,7 +188,11 @@ public sealed class InspectorPanel : UserControl
     }
     private static void AddRow(Panel panel, string label, FrameworkElement control)
     {
-        AutomationProperties.SetName(control, label); panel.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 4, 0, 2) }); panel.Children.Add(control);
+        AutomationProperties.SetName(control, label);
+        // Same 88 DIP label column as NumberBox (80 + 8 gap) and the annotation/edge panels, so every row aligns.
+        var row = new Grid { Margin = new Thickness(0, 2, 0, 2) }; row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(88) }); row.ColumnDefinitions.Add(new ColumnDefinition());
+        row.Children.Add(new TextBlock { Text = label, ToolTip = label, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        Grid.SetColumn(control, 1); row.Children.Add(control); panel.Children.Add(row);
     }
     private static Button AddIcon(Panel panel, string label, string icon, Action run)
     {

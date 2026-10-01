@@ -174,6 +174,26 @@ public sealed class ShellIntegrationTests
     }
 
     [Fact]
+    public void Button_icons_are_never_clipped_by_padding_at_any_width()
+    {
+        WithWindow((window, _) =>
+        {
+            foreach (var width in new[] { 1280, 800, 640 })
+            {
+                window.Width = width; window.Measure(new Size(width, 820)); window.Arrange(new Rect(0, 0, width, 820)); window.UpdateLayout();
+                foreach (var button in Descendants(window).OfType<System.Windows.Controls.Primitives.ButtonBase>().Where(b => b.IsVisible))
+                    foreach (var icon in Descendants(button).OfType<System.Windows.Shapes.Path>().Where(p => p.IsVisible && p.Data is not null))
+                    {
+                        var bounds = icon.TransformToAncestor(button).TransformBounds(new Rect(icon.RenderSize));
+                        var inner = new Rect(button.Padding.Left + button.BorderThickness.Left, 0, Math.Max(0, button.ActualWidth - button.Padding.Left - button.Padding.Right - button.BorderThickness.Left - button.BorderThickness.Right), button.ActualHeight);
+                        Assert.True(bounds.Left >= -0.5 && bounds.Right <= button.ActualWidth + 0.5 && bounds.Width <= inner.Width + 0.5,
+                            $"{AutomationProperties.GetName(button)} at {width}: icon {bounds.Width:0.#} wide, content box {inner.Width:0.#}");
+                    }
+            }
+        });
+    }
+
+    [Fact]
     public void Inspector_keeps_its_tree_during_property_edits_and_canvas_escape_then_tab_leaves()
     {
         WithWindow((window, vm) =>

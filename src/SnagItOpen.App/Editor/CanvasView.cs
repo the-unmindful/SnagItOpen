@@ -185,7 +185,7 @@ public sealed class CanvasView : FrameworkElement
         DraftPen = Frozen(new Pen(accent, 1.5) { DashStyle = DashStyles.Dash });
         HoverPen = Frozen(new Pen(Token("Accent.Select", SystemColors.HighlightBrush, 0.65), 1));
         GuidePen = Frozen(new Pen(Token("Accent.Guide", SystemColors.HighlightBrush), 1));
-        FocusPen = Frozen(new Pen(Token("Stroke.Focus", SystemColors.WindowTextBrush), 2));
+        FocusPen = Frozen(new Pen(Token("Accent.Select", SystemColors.HighlightBrush), 1.5)); // PRD 5.2: Accent.Select is the on-canvas focus colour
         HandleFill = Token("Handle.Fill", SystemColors.HighlightTextBrush);
         SpecialFill = Token("Handle.Special", SystemColors.HighlightBrush);
         Backdrop = Token("Bg.Canvas", SystemColors.ControlBrush);
@@ -323,7 +323,8 @@ public sealed class CanvasView : FrameworkElement
     private void DrawDocument(DrawingContext dc, DocumentState? doc)
     {
         dc.DrawRectangle(Backdrop, null, new Rect(0, 0, ActualWidth, ActualHeight));
-        if (doc is null || _vm is null) return;
+        // An empty document has a placeholder 1x1 export area fitted to the viewport: drawing its sheet frames the whole canvas.
+        if (doc is null || _vm is null || _vm.IsEmpty) return;
         var export = ToView(doc.ExportArea.ToRectD());
         dc.DrawRoundedRectangle(SheetShadow, null, new Rect(export.X - 1, export.Y + 2, export.Width + 2, export.Height + 2), 2, 2);
         if (doc.Background.A < 255) dc.DrawRectangle(Checker, null, export);
@@ -1023,7 +1024,8 @@ public sealed class CanvasView : FrameworkElement
     protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e)
     {
         base.OnGotKeyboardFocus(e);
-        _keyboardFocus = !_pointerFocusing;
+        // Programmatic focus (startup, after dialogs) must not light the ring; only focus that arrives by keyboard.
+        _keyboardFocus = !_pointerFocusing && InputManager.Current.MostRecentInputDevice is KeyboardDevice;
         RefreshAdorners();
     }
 

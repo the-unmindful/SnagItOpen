@@ -400,6 +400,8 @@ public partial class MainWindow : Window
         var color = t is CalloutAnnotation c ? c.TextColor : t.Color;
         var tb = new TextBox
         {
+            // An empty style opts out of the themed input template, which would change size and padding vs the renderer.
+            Style = new Style(typeof(TextBox)), Margin = new Thickness(0, 2, 0, 2),
             Text = t.Text, AcceptsReturn = true, AcceptsTab = false, TextWrapping = TextWrapping.Wrap,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(0), Foreground = new SolidColorBrush(color.ToColor()),
