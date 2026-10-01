@@ -11,15 +11,19 @@ public enum ScrollStopReason
 /// <summary>Bounded defaults for scrolling capture (spec T36). All are configurable.</summary>
 public sealed record ScrollingOptions
 {
-    public int MaxFrames { get; init; } = 20;
-    public TimeSpan MaxDuration { get; init; } = TimeSpan.FromSeconds(60);
+    public int MaxFrames { get; init; } = 80;
+    public TimeSpan MaxDuration { get; init; } = TimeSpan.FromMinutes(3);
     public int MaxOutputHeight { get; init; } = Limits.MaxDimension;
     public long MaxOutputPixels { get; init; } = Limits.MaxExportPixels;
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(100);
     public int StableComparisons { get; init; } = 3;
     public TimeSpan StabilizeTimeout { get; init; } = TimeSpan.FromSeconds(2);
+    /// <summary>Initial wheel notches per automatic step; adapted after each frame so frames overlap by about 40 %.</summary>
     public int WheelNotches { get; init; } = 3;
+    public int MaxWheelNotches { get; init; } = 15;
     public OverlapOptions Overlap { get; init; } = new();
+    /// <summary>Detect a sticky header/footer on the second frame when none is configured.</summary>
+    public bool DetectStickyBands { get; init; } = true;
 }
 
 /// <summary>An accepted frame and the rows of it that repeat the previous frame.</summary>
@@ -41,12 +45,21 @@ public sealed class ScrollingSession<TFrame> where TFrame : class
     private readonly List<ScrollFrame<TFrame>> _frames = [];
     private LumaImage? _lastLuma;
     private long _height;
+    private OverlapOptions _overlap;
 
     public ScrollingSession(Func<TFrame, LumaImage> luma, ScrollingOptions? options = null)
     {
         _luma = luma;
         Options = options ?? new ScrollingOptions();
+        _overlap = Options.Overlap;
+        NextNotches = Math.Clamp(Options.WheelNotches, 1, Options.MaxWheelNotches);
     }
+
+    /// <summary>Sticky rows excluded from matching and kept once when stitching (configured or detected).</summary>
+    public int HeaderRows => _overlap.HeaderRows;
+    public int FooterRows => _overlap.FooterRows;
+    /// <summary>Wheel notches for the next automatic step.</summary>
+    public int NextNotches { get; private set; }
 
     public ScrollingOptions Options { get; }
     public IReadOnlyList<ScrollFrame<TFrame>> Frames => _frames;
@@ -69,7 +82,12 @@ public sealed class ScrollingSession<TFrame> where TFrame : class
             return FrameVerdict.Accepted;
         }
         if (OverlapMatcher.AreSame(_lastLuma, luma)) return FrameVerdict.Unchanged;
-        var m = OverlapMatcher.FindVertical(_lastLuma, luma, Options.Overlap);
+        if (_frames.Count == 1 && Options.DetectStickyBands && _overlap.HeaderRows == 0 && _overlap.FooterRows == 0)
+        {
+            var (header, footer) = OverlapMatcher.StickyRows(_lastLuma, luma);
+            if (header > 0 || footer > 0) _overlap = _overlap with { HeaderRows = header, FooterRows = footer };
+        }
+        var m = OverlapMatcher.FindVertical(_lastLuma, luma, _overlap);
         if (!m.IsConfident)
         {
             Pending = frame;
@@ -116,8 +134,16 @@ public sealed class ScrollingSession<TFrame> where TFrame : class
     private void Accept(TFrame frame, LumaImage luma, int overlap, OverlapSuggestion? m)
     {
         _frames.Add(new ScrollFrame<TFrame>(frame, overlap, m));
+        Pending = null; PendingMatch = null;
         _height = _frames.Count == 1 ? luma.Height : _height + luma.Height - overlap;
         _lastLuma = luma;
+        // Adapt the scroll step: aim for ~60 % new content per frame (40 % overlap keeps matching reliable).
+        int content = luma.Height - _overlap.HeaderRows - _overlap.FooterRows;
+        if (_frames.Count > 1 && content > 0 && _lastNotches > 0)
+        {
+            double perNotch = Math.Max(1, content - overlap) / (double)_lastNotches;
+            NextNotches = Math.Clamp((int)Math.Round(content * 0.6 / perNotch), 1, Options.MaxWheelNotches);
+        }
         Changed?.Invoke();
     }
 
@@ -125,9 +151,11 @@ public sealed class ScrollingSession<TFrame> where TFrame : class
     /// Automatic mode: capture first frame, then repeatedly scroll, wait for the content to settle,
     /// and offer the frame, until a stop condition. Never scrolls after returning.
     /// </summary>
+    private int _lastNotches;
+
     public async Task<ScrollStopReason> RunAutomaticAsync(
         Func<CancellationToken, Task<TFrame>> capture,
-        Func<bool> scroll,
+        Func<int, bool> scroll,
         Func<TimeSpan, CancellationToken, Task> delay,
         Func<DateTimeOffset> clock,
         CancellationToken ct)
@@ -145,11 +173,23 @@ public sealed class ScrollingSession<TFrame> where TFrame : class
                 ct.ThrowIfCancellationRequested();
                 if (_frames.Count >= Options.MaxFrames) { Stop(ScrollStopReason.FrameLimit); break; }
                 if (clock() - start >= Options.MaxDuration) { Stop(ScrollStopReason.TimeLimit); break; }
-                if (!scroll()) { Stop(ScrollStopReason.TargetLost); break; }
+                _lastNotches = NextNotches;
+                if (!scroll(_lastNotches)) { Stop(ScrollStopReason.TargetLost); break; }
 
                 var frame = await WaitStableAsync(capture, delay, clock, ct).ConfigureAwait(false);
                 if (frame is null) { Stop(ScrollStopReason.Unstable); break; }
-                switch (Offer(frame))
+                var verdict = Offer(frame);
+                if (verdict == FrameVerdict.LowConfidence && _lastNotches > 1)
+                {
+                    // Usually an overshoot (no shared rows). Scroll back half the step and try once more before asking.
+                    int back = Math.Max(1, _lastNotches / 2);
+                    if (!scroll(-back)) { Stop(ScrollStopReason.TargetLost); break; }
+                    _lastNotches -= back; NextNotches = Math.Max(1, _lastNotches);
+                    frame = await WaitStableAsync(capture, delay, clock, ct).ConfigureAwait(false);
+                    if (frame is null) { Stop(ScrollStopReason.Unstable); break; }
+                    verdict = Offer(frame);
+                }
+                switch (verdict)
                 {
                     case FrameVerdict.Unchanged: Stop(ScrollStopReason.Unchanged); break;
                     case FrameVerdict.LowConfidence: Stop(ScrollStopReason.LowConfidence); break;

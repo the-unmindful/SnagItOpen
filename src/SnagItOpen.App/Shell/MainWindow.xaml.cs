@@ -292,7 +292,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Asks about unsaved changes. Returns false when the user cancels.</summary>
-    private bool ConfirmDiscard()
+    internal bool ConfirmDiscard()
     {
         if (!_vm.IsDirty || _vm.IsEmpty) return true;
         var r = Dialogs.Confirm(this, "SnagItOpen", "Save changes to the current composition?", "Save", "Discard", "Cancel");

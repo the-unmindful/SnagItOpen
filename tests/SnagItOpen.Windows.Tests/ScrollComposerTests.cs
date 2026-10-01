@@ -31,7 +31,7 @@ public class ScrollComposerTests
     public void Sticky_header_and_footer_appear_once_and_never_at_a_seam()
     {
         var a = Frame(0, header: 6, footer: 4); var b = Frame(20, header: 6, footer: 4);
-        var output = ScrollComposer.Compose([(a, 0), (b, 20)], header: 6, footer: 4); // content overlap = 20 rows
+        var output = ScrollComposer.Compose([(a, 0), (b, 30)], header: 6, footer: 4); // matcher overlap = 20 content + 6 + 4
         Assert.Equal(70, output.Height);
         for (int y = 0; y < 6; y++) Assert.Equal(a[3, y], output[3, y]);              // header once, at the top
         for (int y = 6; y < 66; y++) Assert.Equal(0xFF000000u | (uint)y, output[3, y]); // continuous page, no repeated bands
@@ -45,16 +45,5 @@ public class ScrollComposerTests
         Assert.Equal(51, ScrollComposer.Compose([(a, 99), (b, 500)]).Height); // first overlap ignored, second clamped to height-1
         Assert.Throws<ArgumentException>(() => ScrollComposer.Compose([(a, 0), (Frame(10, width: 9), 5)]));
         Assert.Throws<ArgumentException>(() => ScrollComposer.Compose([]));
-    }
-
-    [Fact]
-    public void Sticky_header_and_footer_are_detected_but_blank_margins_and_unscrolled_frames_are_not()
-    {
-        Assert.Equal((6, 4), ScrollComposer.StickyRows(Frame(0, header: 6, footer: 4), Frame(25, header: 6, footer: 4)));
-        Assert.Equal((0, 0), ScrollComposer.StickyRows(Frame(0), Frame(25)));
-        Assert.Equal((0, 0), ScrollComposer.StickyRows(Frame(0, header: 6), Frame(0, header: 6)));
-        var blankA = PixelBuffer.Solid(8, 50, SnagItOpen.Core.Geometry.Rgba32.White); var blankB = blankA.Clone();
-        for (int x = 0; x < 8; x++) for (int y = 20; y < 30; y++) blankB[x, y] = 0xFF123456u;
-        Assert.Equal((0, 0), ScrollComposer.StickyRows(blankA, blankB));
     }
 }

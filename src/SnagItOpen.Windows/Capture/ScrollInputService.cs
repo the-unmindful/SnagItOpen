@@ -7,7 +7,7 @@ namespace SnagItOpen.Windows.Capture;
 /// <summary>Sends scroll input for automatic scrolling capture; fakeable in tests.</summary>
 public interface IScrollInput
 {
-    /// <summary>Scrolls down by wheel notches at a physical point. Returns false if the target lost focus.</summary>
+    /// <summary>Scrolls down by wheel notches (negative = up) at a physical point. Returns false if the target lost focus.</summary>
     bool ScrollDown(PixelPoint at, int notches, IntPtr expectedForeground);
 }
 
@@ -21,7 +21,8 @@ public sealed class ScrollInputService : IScrollInput
 
     public bool ScrollDown(PixelPoint at, int notches, IntPtr expectedForeground)
     {
-        notches = Math.Clamp(notches, 1, 20);
+        notches = Math.Clamp(notches, -20, 20); // negative scrolls up
+        if (notches == 0) return true;
         if (expectedForeground != IntPtr.Zero)
         {
             var fg = GetForegroundWindow();

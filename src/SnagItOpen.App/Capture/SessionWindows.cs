@@ -31,6 +31,7 @@ internal abstract class SessionPanel : Window
     protected readonly TextBlock StatusText = new() { TextWrapping = TextWrapping.Wrap, MaxWidth = 320, Margin = new Thickness(0, 0, 0, 10), LineHeight = 18 };
     protected readonly WrapPanel Buttons = new() { MaxWidth = 320 };
     protected PixelRect Region;
+    protected Window OwnerWindow => _owner;
     protected bool TopologyChanged;
 
     protected SessionPanel(AppServices services, CaptureCoordinator coordinator, EditorViewModel vm, Window owner, string title)
@@ -138,6 +139,17 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
 
     private readonly Controls.NumberBox _header = new() { Minimum = 0, Maximum = 4000, Value = 0, Width = 64 };
     private readonly Controls.NumberBox _footer = new() { Minimum = 0, Maximum = 4000, Value = 0, Width = 64 };
+    // Where the stitched result goes. A scrolling capture is a standalone image, so "New image" is the default; the
+    // choice is visible here (the global default destination used to apply silently and joined it to the open image).
+    private static CaptureDestination _lastDestination = CaptureDestination.NewDocument;
+    private readonly ComboBox _destination = new() { MinWidth = 200, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 10) };
+    private static readonly (CaptureDestination Value, string Label)[] Destinations =
+    [
+        (CaptureDestination.NewDocument, "New image (replaces the open one)"),
+        (CaptureDestination.AppendBelow, "Join below the open image"),
+        (CaptureDestination.AddToCanvas, "Place on the free canvas"),
+        (CaptureDestination.CopyOnly, "Copy to clipboard only"),
+    ];
     private readonly Image _preview = new() { MaxHeight = 220, MaxWidth = 300, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 10), Visibility = Visibility.Collapsed };
     private readonly Button _next, _auto, _stop, _finish;
     private ScrollingSession<PixelBuffer>? _session;
@@ -158,6 +170,15 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
         AutomationProperties.SetName(_footer, "Fixed footer rows to ignore");
         ((StackPanel)Content).Children.Insert(1, margins);
         ((StackPanel)Content).Children.Insert(2, _preview);
+        var result = new StackPanel { Orientation = Orientation.Horizontal };
+        result.Children.Add(new TextBlock { Text = "Result", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 10) });
+        foreach (var (_, label) in Destinations) _destination.Items.Add(label);
+        _destination.SelectedIndex = Math.Max(0, Array.FindIndex(Destinations, d => d.Value == _lastDestination));
+        if (Vm.IsEmpty) _destination.SelectedIndex = 0; // nothing to replace or join
+        _destination.SelectionChanged += (_, _) => _lastDestination = Destinations[Math.Max(0, _destination.SelectedIndex)].Value;
+        AutomationProperties.SetName(_destination, "Where the stitched result goes");
+        result.Children.Add(_destination);
+        ((StackPanel)Content).Children.Insert(3, result);
         AutomationProperties.SetName(_preview, "Stitched result preview");
 
         _auto = AddButton("Auto scroll", () => _ = AutoAsync(), "Scrolls the selected window automatically until the end", "PrimaryButton");
@@ -211,7 +232,9 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
         if (_session is not { Frames.Count: > 0 } s) return;
         try
         {
-            _preview.Source = ScrollComposer.Compose(s.Frames.Select(f => (f.Frame, f.Overlap)).ToList(), s.Options.Overlap.HeaderRows, s.Options.Overlap.FooterRows).ToBitmap();
+            if ((int)_header.Value != s.HeaderRows) _header.Value = s.HeaderRows; // show detected sticky bands
+            if ((int)_footer.Value != s.FooterRows) _footer.Value = s.FooterRows;
+            _preview.Source = ScrollComposer.Compose(s.Frames.Select(f => (f.Frame, f.Overlap)).ToList(), s.HeaderRows, s.FooterRows).ToBitmap();
             _preview.Visibility = Visibility.Visible;
         }
         catch (Exception ex) when (ex is ArgumentException or OutOfMemoryException or OverflowException) { _preview.Visibility = Visibility.Collapsed; }
@@ -229,16 +252,6 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
             EnsureSession();
             if (_session!.Frames.Count >= _session.Options.MaxFrames) { SetStatus($"Frame limit reached. {Progress()} Click Finish."); return; }
             var px = await Coordinator.CaptureRectAsync(Region, false);
-            if (_session.Frames.Count == 1 && _header.Value == 0 && _footer.Value == 0)
-            {
-                // F-SCR3: a sticky header/footer is identical in both frames; exclude it from matching and stitching.
-                var first = _session.Frames[0].Frame;
-                var (top, bottom) = ScrollComposer.StickyRows(first, px);
-                if (top > 0 || bottom > 0)
-                {
-                    _header.Value = top; _footer.Value = bottom; _session = null; EnsureSession(); _session!.Offer(first);
-                }
-            }
             switch (_session.Offer(px))
             {
                 case FrameVerdict.Accepted:
@@ -281,8 +294,9 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
         };
         var answer = SeamDialog.Show(this, pending.Height, m is { Overlap: > 0 } ? m.Overlap : 0,
             renderPreview: overlap => ScrollingSeamPreview.Build(previous, pending, overlap).ToBitmap(),
-            note: $"The overlap could not be determined because {why}. Cancel skips this frame.", allowZero: true,
-            beforePreview: ScrollingSeamPreview.Build(previous, pending, 0).ToBitmap());
+            note: $"Automatic matching was unsure because {why}. Adjust the overlap until the After preview is seamless, then click Add frame. Cancel leaves this frame out; the capture continues.", allowZero: true,
+            beforePreview: ScrollingSeamPreview.Build(previous, pending, 0).ToBitmap(),
+            title: "Line up the next frame", intro: "This frame is part of your scrolling capture (not the image on the canvas). Rows it repeats from the previous frame are removed.", primary: "Add frame");
         if (answer is { } n && _session.AcceptPending(n))
         {
             SetStatus($"Frame added with {n} overlapping rows. {Progress()}"); UpdatePreview();
@@ -307,7 +321,7 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
             await Task.Delay(250, _autoCts.Token);
             var reason = await _session.RunAutomaticAsync(
                 ct => Coordinator.CaptureRectAsync(Region, false, ct),
-                () => !TopologyChanged && scroller.ScrollDown(center, _session.Options.WheelNotches, _target),
+                notches => !TopologyChanged && scroller.ScrollDown(center, notches, _target), // negative = back up (overshoot recovery)
                 (t, c) => Task.Delay(t, c),
                 () => DateTimeOffset.Now,
                 _autoCts.Token);
@@ -367,8 +381,14 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
         {
             // One seamless image (F-SCR1): stitched from the accepted frames minus their overlaps, then delivered like any
             // other capture, so it follows the capture destination and lands in the recent captures library.
-            var stitched = ScrollComposer.Compose(s.Frames.Select(f => (f.Frame, f.Overlap)).ToList(), s.Options.Overlap.HeaderRows, s.Options.Overlap.FooterRows);
-            var dest = Services.Settings.DefaultDestination == CaptureDestination.CopyOnly ? CaptureDestination.AppendBelow : Services.Settings.DefaultDestination;
+            var stitched = ScrollComposer.Compose(s.Frames.Select(f => (f.Frame, f.Overlap)).ToList(), s.HeaderRows, s.FooterRows);
+            var dest = Destinations[Math.Max(0, _destination.SelectedIndex)].Value;
+            if (dest == CaptureDestination.NewDocument && Vm.IsDirty && !Vm.IsEmpty && OwnerWindow is MainWindow main && !main.ConfirmDiscard())
+            {
+                _finished = false; _busy = false; UpdateButtons();
+                SetStatus($"Kept the open image. Choose another Result, or Finish again. {Progress()}");
+                return;
+            }
             await Vm.AddCapturesAsync([new CaptureItem(stitched, Region)], dest);
             Vm.Status = $"Scrolling capture added: {s.Frames.Count} frame(s) stitched into one {stitched.Width} × {stitched.Height} px image.";
             Close();

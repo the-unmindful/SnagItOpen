@@ -16,12 +16,13 @@ public sealed class SeamDialog : DialogWindow
     private readonly Action<double>? _previewAction;
     private readonly Func<int, ImageSource?>? _renderPreview;
     public int? Result { get; private set; }
-    public SeamDialog(Window? owner, int available, int initial = 1, Action<double>? preview = null, Func<int, ImageSource?>? renderPreview = null, string? note = null, bool allowZero = false, ImageSource? beforePreview = null)
-        : base(owner, "Join overlapping images", new StackPanel(), "Join")
+    public SeamDialog(Window? owner, int available, int initial = 1, Action<double>? preview = null, Func<int, ImageSource?>? renderPreview = null, string? note = null, bool allowZero = false, ImageSource? beforePreview = null,
+        string title = "Join overlapping images", string intro = "Remove repeated pixels from the start of the second image.", string primary = "Join")
+        : base(owner, title, new StackPanel(), primary)
     {
         _available = available; _allowZero = allowZero; _previewAction = preview; _renderPreview = renderPreview; _overlap.Minimum = allowZero ? 0 : 1; _overlap.Maximum = Math.Max(_overlap.Minimum, available - 1); _overlap.Value = Math.Clamp(initial, _overlap.Minimum, _overlap.Maximum);
         var body = (StackPanel)Body;
-        body.Children.Add(new TextBlock { Text = "Remove repeated pixels from the start of the second image.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        body.Children.Add(new TextBlock { Text = intro, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         if (!string.IsNullOrEmpty(note)) body.Children.Add(new TextBlock { Text = note, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) });
         body.Children.Add(_overlap); body.Children.Add(_error);
         var previews = new System.Windows.Controls.Primitives.UniformGrid { Columns = beforePreview is null ? 1 : 2, Margin = new Thickness(0, 12, 0, 0) };
@@ -42,8 +43,9 @@ public sealed class SeamDialog : DialogWindow
         if (error is null) { _previewAction?.Invoke(overlap); _preview.Source = _renderPreview?.Invoke(overlap); _preview.Visibility = _preview.Source is null ? Visibility.Collapsed : Visibility.Visible; }
         return error is null;
     }
-    public static int? Show(Window? owner, int maxOverlap, int initial = 1, Action<double>? preview = null, Func<int, ImageSource?>? renderPreview = null, string? note = null, bool allowZero = false, ImageSource? beforePreview = null)
+    public static int? Show(Window? owner, int maxOverlap, int initial = 1, Action<double>? preview = null, Func<int, ImageSource?>? renderPreview = null, string? note = null, bool allowZero = false, ImageSource? beforePreview = null,
+        string title = "Join overlapping images", string intro = "Remove repeated pixels from the start of the second image.", string primary = "Join")
     {
-        var dialog = new SeamDialog(owner, maxOverlap, initial, preview, renderPreview, note, allowZero, beforePreview); return dialog.ShowDialog() == true ? dialog.Result : null;
+        var dialog = new SeamDialog(owner, maxOverlap, initial, preview, renderPreview, note, allowZero, beforePreview, title, intro, primary); return dialog.ShowDialog() == true ? dialog.Result : null;
     }
 }

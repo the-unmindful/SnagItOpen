@@ -109,6 +109,24 @@ public static class OverlapMatcher
     }
 
     /// <summary>True when two frames are (nearly) identical: probable end of scrolling.</summary>
+    /// <summary>
+    /// Rows at the top and bottom identical in two consecutive frames (a sticky header/footer that does not scroll), each
+    /// capped at a third of the height. Bands without any detail (blank margins) do not count; (0, 0) if nothing scrolled.
+    /// </summary>
+    public static (int Header, int Footer) StickyRows(LumaImage a, LumaImage b, float tolerance = 0.004f)
+    {
+        if (a.Width != b.Width || a.Height != b.Height) return (0, 0);
+        int w = a.Width, h = a.Height, cap = h / 3;
+        bool Same(int y) { for (int x = 0; x < w; x++) if (Math.Abs(a[x, y] - b[x, y]) > tolerance) return false; return true; }
+        bool Varied(int y) { float first = a[0, y]; for (int x = 1; x < w; x++) if (Math.Abs(a[x, y] - first) > 0.02f) return true; return false; }
+        int top = 0; while (top < cap && Same(top)) top++;
+        int bottom = 0; while (bottom < cap && Same(h - 1 - bottom)) bottom++;
+        if (top == cap && bottom == cap) return (0, 0); // probably did not scroll at all
+        if (!Enumerable.Range(0, top).Any(Varied)) top = 0;
+        if (!Enumerable.Range(h - bottom, bottom).Any(Varied)) bottom = 0;
+        return (top, bottom);
+    }
+
     public static bool AreSame(LumaImage a, LumaImage b, double tolerance = 0.004)
     {
         if (a.Width != b.Width || a.Height != b.Height) return false;

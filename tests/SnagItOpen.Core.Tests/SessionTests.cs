@@ -81,7 +81,7 @@ public class ScrollingSessionTests
         int top = 0, scrolls = 0;
         var clock = new FakeClock();
         var s = new ScrollingSession<LumaImage>(x => x);
-        bool Scroll() { scrolls++; top = Math.Min(top + step, pageH - h); return true; }
+        bool Scroll(int notches) { scrolls++; top = Math.Min(top + step, pageH - h); return true; }
         var reason = await s.RunAutomaticAsync(_ => Task.FromResult(Window(page, w, top, h)), Scroll, clock.Delay, () => clock.Now, CancellationToken.None);
         Assert.Equal(ScrollStopReason.Unchanged, reason);
         Assert.Equal(pageH, s.OutputHeight);
@@ -97,7 +97,7 @@ public class ScrollingSessionTests
         int top = 0;
         var clock = new FakeClock();
         var s = new ScrollingSession<LumaImage>(x => x, new ScrollingOptions { MaxFrames = 3 });
-        var r = await s.RunAutomaticAsync(_ => Task.FromResult(Window(page, 64, top, 100)), () => { top += 50; return true; }, clock.Delay, () => clock.Now, CancellationToken.None);
+        var r = await s.RunAutomaticAsync(_ => Task.FromResult(Window(page, 64, top, 100)), _ => { top += 50; return true; }, clock.Delay, () => clock.Now, CancellationToken.None);
         Assert.Equal(ScrollStopReason.FrameLimit, r);
         Assert.Equal(3, s.Frames.Count);
     }
@@ -108,7 +108,7 @@ public class ScrollingSessionTests
         var page = Page(64, 400);
         var clock = new FakeClock();
         var s = new ScrollingSession<LumaImage>(x => x);
-        var r = await s.RunAutomaticAsync(_ => Task.FromResult(Window(page, 64, 0, 100)), () => false, clock.Delay, () => clock.Now, CancellationToken.None);
+        var r = await s.RunAutomaticAsync(_ => Task.FromResult(Window(page, 64, 0, 100)), _ => false, clock.Delay, () => clock.Now, CancellationToken.None);
         Assert.Equal(ScrollStopReason.TargetLost, r);
         Assert.Single(s.Frames);
     }
@@ -119,8 +119,54 @@ public class ScrollingSessionTests
         int n = 0;
         var clock = new FakeClock();
         var s = new ScrollingSession<LumaImage>(x => x);
-        var r = await s.RunAutomaticAsync(_ => Task.FromResult(Window(Page(64, 100, n++), 64, 0, 100)), () => true, clock.Delay, () => clock.Now, CancellationToken.None);
+        var r = await s.RunAutomaticAsync(_ => Task.FromResult(Window(Page(64, 100, n++), 64, 0, 100)), _ => true, clock.Delay, () => clock.Now, CancellationToken.None);
         Assert.Equal(ScrollStopReason.Unstable, r);
+    }
+
+    [Fact]
+    public async Task Automatic_mode_adapts_the_scroll_step_to_about_sixty_percent_new_content()
+    {
+        const int w = 64, h = 100, rowsPerNotch = 10, pageH = 2000;
+        var page = Page(w, pageH); int top = 0; var notchLog = new List<int>();
+        var clock = new FakeClock();
+        var s = new ScrollingSession<LumaImage>(x => x, new ScrollingOptions { MaxFrames = 4 });
+        bool Scroll(int n) { notchLog.Add(n); top = Math.Clamp(top + n * rowsPerNotch, 0, pageH - h); return true; }
+        await s.RunAutomaticAsync(_ => Task.FromResult(Window(page, w, top, h)), Scroll, clock.Delay, () => clock.Now, CancellationToken.None);
+        Assert.Equal(3, notchLog[0]);   // configured start
+        Assert.Equal(6, notchLog[1]);   // 60 rows of a 100-row frame at 10 rows per notch
+        Assert.Equal(top + h, (int)s.OutputHeight);
+    }
+
+    [Fact]
+    public async Task Automatic_mode_recovers_from_an_overshoot_by_scrolling_back()
+    {
+        const int w = 64, h = 100, rowsPerNotch = 40, pageH = 400;
+        var page = Page(w, pageH); int top = 0; var notchLog = new List<int>();
+        var clock = new FakeClock();
+        var s = new ScrollingSession<LumaImage>(x => x);
+        bool Scroll(int n) { notchLog.Add(n); top = Math.Clamp(top + n * rowsPerNotch, 0, pageH - h); return true; }
+        var reason = await s.RunAutomaticAsync(_ => Task.FromResult(Window(page, w, top, h)), Scroll, clock.Delay, () => clock.Now, CancellationToken.None);
+        Assert.Equal(ScrollStopReason.Unchanged, reason);
+        Assert.Contains(notchLog, n => n < 0);  // scrolled back after 3 notches (120 rows) left no shared rows
+        Assert.Equal(pageH, (int)s.OutputHeight);
+        Assert.Null(s.Pending);
+    }
+
+    [Fact]
+    public void Sticky_header_is_detected_on_the_second_frame_and_excluded_from_matching()
+    {
+        const int w = 64, h = 100, header = 12;
+        var page = Page(w, 400); var banner = Page(w, header, 7);
+        LumaImage Frame(int top)
+        {
+            var view = Window(page, w, top, h); var data = (float[])view.Data.Clone();
+            Array.Copy(banner, 0, data, 0, w * header); return new LumaImage(w, h, data);
+        }
+        var s = new ScrollingSession<LumaImage>(x => x);
+        s.Offer(Frame(0));
+        Assert.Equal(FrameVerdict.Accepted, s.Offer(Frame(50)));
+        Assert.Equal(header, s.HeaderRows);
+        Assert.Equal(h - 50, s.Frames[1].Overlap); // full-frame rows: 38 repeated content rows + 12 header rows
     }
 
     [Fact]
@@ -130,7 +176,7 @@ public class ScrollingSessionTests
         var page = Page(64, 400);
         var clock = new FakeClock();
         var s = new ScrollingSession<LumaImage>(x => x);
-        var r = await s.RunAutomaticAsync(_ => Task.FromResult(Window(page, 64, 0, 100)), () => { cts.Cancel(); return true; }, clock.Delay, () => clock.Now, cts.Token);
+        var r = await s.RunAutomaticAsync(_ => Task.FromResult(Window(page, 64, 0, 100)), _ => { cts.Cancel(); return true; }, clock.Delay, () => clock.Now, cts.Token);
         Assert.Equal(ScrollStopReason.Canceled, r);
     }
 }
