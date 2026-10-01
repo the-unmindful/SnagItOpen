@@ -1200,6 +1200,10 @@ public partial class MainWindow : Window
             mi.Click += (_, _) => { _services.SaveSettings(S with { DefaultDestination = d }); BuildCaptureMenus(); };
             DestinationMenu.Items.Add(mi);
         }
+        DestinationMenu.Items.Add(new Separator());
+        var autoCopy = new MenuItem { Header = "Also copy each capture to the clipboard", IsCheckable = true, IsChecked = S.CopyCaptureToClipboard };
+        autoCopy.Click += (_, _) => { _services.SaveSettings(S with { CopyCaptureToClipboard = autoCopy.IsChecked }); BuildCaptureMenus(); };
+        DestinationMenu.Items.Add(autoCopy);
         DelayMenu.Items.Clear();
         foreach (var s in CaptureOptions.AllowedDelays)
         {

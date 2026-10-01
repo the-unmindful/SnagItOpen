@@ -46,6 +46,8 @@ public sealed record AppSettings
     public int CaptureDelaySeconds { get; init; }
     public bool IncludeCursor { get; init; }
     public CaptureDestination DefaultDestination { get; init; } = CaptureDestination.AppendBelow;
+    /// <summary>Also copy every finished capture to the clipboard (on by default; "Copy to clipboard only" always copies).</summary>
+    public bool CopyCaptureToClipboard { get; init; } = true;
     /// <summary>What happens after a drawing tool creates an element (default: like Affinity/Illustrator, keep the tool, select the new element).</summary>
     public AfterDrawBehavior AfterDrawing { get; init; } = AfterDrawBehavior.KeepToolSelectNew;
     /// <summary>Closing the editor hides it; SnagItOpen keeps running in the tray with its hotkeys.</summary>

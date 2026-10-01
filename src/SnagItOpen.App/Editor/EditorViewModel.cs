@@ -808,7 +808,28 @@ public sealed class EditorViewModel : ObservableObject
     /// <summary>
     /// Adds captured images per destination as one undoable step. Returns false when nothing was added.
     /// </summary>
+    /// <summary>Delivers captures to <paramref name="destination"/>, then (if enabled in settings) copies the latest one to the clipboard.</summary>
     public async Task<bool> AddCapturesAsync(IReadOnlyList<CaptureItem> items, CaptureDestination destination, bool combineVertical = true)
+    {
+        bool added = await AddCapturesCoreAsync(items, destination, combineVertical);
+        if (added && destination != CaptureDestination.CopyOnly && _services.Settings.CopyCaptureToClipboard && items.Count > 0)
+        {
+            var status = Status;
+            try
+            {
+                var px = items[^1].Pixels;
+                var png = await _services.Imaging.InvokeAsync(px.EncodePng);
+                var opaque = await _services.Imaging.InvokeAsync(() => px.FlattenOnto(Rgba32.White).ToBitmap());
+                var r = await _services.Clipboard.CopyImageAsync(opaque, png);
+                // A failed copy never fails the capture; it only changes the status line.
+                Status = r.IsSuccess ? $"{status} Copied to the clipboard." : $"{status} (Not copied: {r.Message})";
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or OutOfMemoryException or System.Runtime.InteropServices.ExternalException) { Status = $"{status} (Not copied: {ex.Message})"; }
+        }
+        return added;
+    }
+
+    private async Task<bool> AddCapturesCoreAsync(IReadOnlyList<CaptureItem> items, CaptureDestination destination, bool combineVertical)
     {
         LastCaptureSucceeded = false;
         if (items.Count == 0) return false;

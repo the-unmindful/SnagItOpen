@@ -43,6 +43,7 @@ internal sealed class PreferencesPages
         var capture = new SettingsPage("Capture");
         capture.Choice(nameof(initial.CaptureDelaySeconds), "Capture delay", initial.CaptureDelaySeconds, CaptureOptions.AllowedDelays, v => change(s => s with { CaptureDelaySeconds = v }), v => v == 0 ? "No delay" : $"{v} seconds");
         capture.Choice(nameof(initial.DefaultDestination), "Default destination", initial.DefaultDestination, Enum.GetValues<CaptureDestination>(), v => change(s => s with { DefaultDestination = v }));
+        capture.Check(nameof(initial.CopyCaptureToClipboard), "Also copy each capture to the clipboard", initial.CopyCaptureToClipboard, v => change(s => s with { CopyCaptureToClipboard = v }));
         capture.Check(nameof(initial.IncludeCursor), "Include the mouse cursor", initial.IncludeCursor, v => change(s => s with { IncludeCursor = v }));
         capture.Check(nameof(initial.CopyAfterCapture), "Also copy each capture to the clipboard", initial.CopyAfterCapture, v => change(s => s with { CopyAfterCapture = v }));
         capture.Check(nameof(initial.CaptureOnRelease), "Capture immediately on release", initial.CaptureOnRelease, v => change(s => s with { CaptureOnRelease = v }));
