@@ -85,6 +85,12 @@ Done (all committed; see `git log --oneline`):
 - App icon: red rounded square with a white "S" (`src/SnagItOpen.App/Assets/SnagItOpen.ico`, 8 sizes 16–256). Regenerate with `.\scripts\make-icon.ps1`. Set as `<ApplicationIcon>`, so exe, taskbar, windows, shortcuts and tray all use it. The tray loads the frame at `SmallIconSize`, so it stays sharp at high DPI.
 - Empty-canvas start card (`MainWindow.xaml`, inside the canvas `Grid`): replaces the old drawn text that the buttons overlapped. Shows Capture region / Import / Paste buttons and a shortcuts list; the global hotkey labels come from the registered bindings (`UpdateStartCardKeys`). It is bound to `IsEmpty`, so it disappears as soon as anything is added. `CanvasView` now draws text only when content exists but is all hidden.
 
+**Parallel work (from 2026-10-01):** Claude works in this folder on `ui-upgrade`. A worker works in the git worktree `..\SnagItOpen-worker` on branch `polish-worker`. Task ownership and file ownership are in the "Ownership" table of `docs/superpowers/plans/2026-10-01-ui-polish-rectification.md`. Part 2 there holds the F-tasks: text boxes, magnifier, style gallery, grouping and scrolling capture. Release package rebuilt 2026-10-01 14:35 with batch 1: `artifacts/SnagItOpen-0.2.0-win-x64.zip`.
+
+### Requests between agents
+(Append a dated line when you need a change in a file you don't own. The owner answers here and removes the line when it's done.)
+- none
+
 UI polish (2026-10-01, after user feedback that the result looked clunky, with clipped X and chevron icons): plan `docs/superpowers/plans/2026-10-01-ui-polish-rectification.md` (V01–V24, with a status section at the top). Batch 1 is committed: icon clipping root cause, subtle buttons, themed templates (TextBox, ComboBox, Expander, ScrollBar, CheckBox, RadioButton, Tab, Slider), aligned inspector rows, status bar, layers and gallery polish, and the empty-canvas frame. Gate: **211 Core + 227 Windows = 438 passing, 0 warnings**. Smoke launch OK. Next: V24 content-state renders, then V15/V18.
 
 Upgrade completion:

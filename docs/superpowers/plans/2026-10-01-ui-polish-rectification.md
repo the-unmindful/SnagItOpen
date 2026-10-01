@@ -1,6 +1,17 @@
-# UI polish rectification plan (V01–V24)
+# UI polish and editing-quality plan (V01–V24, F-tasks)
 
-Date 2026-10-01. Branch `ui-upgrade`. Baseline `ae40a25` (0.2.0). This is a visual-only plan. It must not change behaviour, export pixels, settings schema or shortcuts. The PRD (`docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md` §4–7) remains the source of truth for colours and metrics.
+Date 2026-10-01. Branch `ui-upgrade`. Baseline `ae40a25` (0.2.0). Part 1 (V-tasks) is visual only: it must not change behaviour, export pixels, settings schema or shortcuts. Part 2 (F-tasks, at the end) changes behaviour as the user requested on 2026-10-01. The PRD (`docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md` §4–7) remains the source of truth for colours and metrics.
+
+## Ownership (two agents work in parallel; never edit the other's files)
+
+| Owner | Tasks | Where | Files owned |
+|---|---|---|---|
+| **Claude** (lead) | F-TXT, F-MAG, F-STY, F-GRP | `SnagItOpen` folder, branch `ui-upgrade` | `Core/Documents/Annotations/*`, `Core/Editing/*`, `Imaging/Rendering/*`, `App/Editor/*` (except `InspectorPanel.cs`), `App/Shell/MainWindow.xaml(.cs)` |
+| **Worker** | F-SCR, V15, V18, V23, V24 | `SnagItOpen-worker` folder (git worktree), branch `polish-worker` | `Core/Stitching/*`, `Core/Capture/*`, `App/Capture/*`, `Imaging` import/export (not Rendering), `App/Editor/InspectorPanel.cs`, `App/Shell/MainWindow.Upgrade.cs`, `App/Themes/*`, tests for these |
+
+- A file outside your column: stop and write the need under "Requests" in `docs/HANDOFF.md`. Don't edit it.
+- The worker commits only on `polish-worker`. Claude merges it into `ui-upgrade`. Nobody pushes.
+- Each agent updates the status lines of its own tasks in this file.
 
 ## Status (update as tasks land)
 
@@ -102,3 +113,55 @@ Batch 1, done on 2026-10-01:
 ## Out of scope
 
 Feature changes, U39 Mica, new settings, and changes to export or document behaviour.
+
+---
+
+# Part 2: editing-quality features (F-tasks, requested by the user on 2026-10-01)
+
+Rules: behaviour changes are allowed here. Project schema stays **v2**: new fields are optional and have defaults that reproduce today's rendering, so old files look identical. Every model change gets Core tests, and every renderer change gets a pixel test in Windows.Tests. One commit per task group (`Area: what changed`).
+
+## F-TXT: text and callout boxes (owner: Claude). Highest value.
+Problems today: the box never grows when the font, family, weight or padding changes. The text is top-aligned with one uniform padding value, so filled "pill" or label boxes never look centred. FormattedText line height adds space below the glyphs, so even equal padding looks bottom-heavy.
+- **TXT1 Sizing mode.** `TextAnnotation.Sizing` = `AutoWidth` (grow to fit the longest line, with no wrapping except at Enter), `AutoHeight` (fixed width, wraps, height follows the text) or `Fixed`. The default for a click-to-place text is AutoWidth; a drag-to-draw box is AutoHeight. Old files load as `Fixed` (the JSON default), so nothing moves. One Core function, `TextLayout.Fit(t, measure)`, recomputes `Bounds` around the anchor, which is the top-left, or the centre when rotated. It runs on every commit that changes text, font, size, bold, italic, padding or sizing, and live while typing (the editor grows with the text).
+- **TXT2 Padding X/Y + vertical alignment.** Add `PaddingX` and `PaddingY` (nullable; `null` falls back to `Padding`) and `VerticalAlign` (Top/Middle/Bottom, default Top for old files and Middle for new text). The renderer centres the line box optically: it uses `ft.Extent` and `ft.OverhangLeading` / `ft.Baseline`, so cap-height and descender space are balanced.
+- **TXT3 Inspector.** The Text section gets Sizing (a three-icon segmented control), Padding H/V, and vertical alignment next to horizontal alignment. Resizing a box with the handles switches AutoWidth to AutoHeight (width), or to Fixed (height drag).
+- **TXT4 Built-in looks.** Gallery presets: "Label" (white on brand red, PaddingX 12, PaddingY 6, radius 6), "Note" (dark on yellow), "Pill" (radius = height/2), "Plain" and "Outline". These use the new fields so they look right immediately.
+- **TXT5 Editor fidelity.** The in-place TextBox uses the same padding X/Y and vertical alignment as the renderer, so text does not jump on commit.
+- Acceptance: increasing the font size grows the box with no clipping; a filled single-line label has visually equal space above and below its glyphs (a pixel test compares the ink bounds); old projects render unchanged (a golden test).
+
+## F-MAG: magnifier lens (owner: Claude)
+Problem today: moving the lens moves `SourceRegion` with it (`Annotation.Offset` maps both), so the zoomed content changes. The user expects the lens and its content to move together, and wants a way to choose what is magnified.
+- **MAG1 Move keeps content.** Add a virtual `Annotation.Translate(dx, dy)` that is used for user moves and nudges (`DocumentOps` move, nudge, duplicate and paste). `MagnifierAnnotation` translates only `Bounds`. Document-wide transforms (scale, normalize) keep using `MapGeometry`, which maps both. Resizing the lens keeps the source centre and changes the zoom.
+- **MAG2 Source handle.** When a lens is selected, draw its source as a dashed `Accent.Select` rectangle or circle with corner handles and a thin connector to the lens. Dragging inside the source moves only the source, and its handles resize it (the zoom changes). Alt+drag on the lens moves both, which is the old behaviour.
+- **MAG3 Inspector.** A Zoom NumberBox (1–8×) resizes the source around its centre. Add Shape (circle/rounded square) and a "Show source outline in export" toggle (default off).
+- Acceptance: moving the lens keeps its pixels identical (pixel test); dragging the source changes them; undo is one step each.
+
+## F-STY: saved style gallery (owner: Claude)
+Problems today: a click only applies the style or sets the tool default. Tiles cannot be dragged onto the canvas or double-clicked to insert. A saved style cannot be edited. Thumbnails are 56×40 bitmaps rendered at 96 DPI with fixed samples, so text and fill styles look cramped and blurry and don't resemble the result.
+- **STY1 Insert.** Double-click or Enter on a tile inserts a new annotation with that style at the centre of the visible canvas, sized by kind (TXT1 auto-size for text), selected, as one undo step. Dragging a tile onto the canvas inserts it at the drop point. The data object carries the `SnagItOpen.Style` id plus a `SnagItOpen.StyleKind` format, and `CanvasView` accepts it. Reordering inside the gallery keeps working.
+- **STY2 Edit.** The tile menu gets "Update from selection" (overwrites the saved style with the selected annotation's style, with confirmation), plus Rename, Duplicate and Delete. A hover tooltip shows a large preview.
+- **STY3 Thumbnails.** Render at the monitor DPI (`VisualTreeHelper.GetDpi`) into a 64×44 tile. Text styles use the real style (font, weight, fill, padding and radius) on the word "Text" auto-fitted with TXT1. Strokes are scaled to stay proportional to how they look at 100 % on the canvas, clamped 1–6 px. Shapes keep their aspect. The selected tile is shown with a 2 px `Accent.Select` ring.
+- Acceptance: a saved style's thumbnail visually matches an inserted sample (a review render in evidence); double-click and drag both insert.
+
+## F-GRP: grouping (owner: Claude, after TXT/MAG/STY)
+- **GRP1 Model.** Add an optional `Guid? GroupId` on `Annotation`. A group is the annotations sharing a GroupId (annotations only, in this version: images stay outside groups because annotations are independent of images, per HANDOFF §4).
+- **GRP2 Commands.** Group (Ctrl+G) and Ungroup (Ctrl+Shift+G), in the Arrange row, the context menu and the palette.
+- **GRP3 Selection.** A click selects the whole group. A double-click (or Ctrl+click) enters the group to select one member. The group shows one dashed outline with handles. Move, resize (scale members about the group bounds), lock, hide, delete and copy/paste act on the whole group. The Objects list shows a group row with an expander.
+- **GRP4 Z-order.** Group members stay contiguous; bringing a group forward moves the block.
+- Acceptance: Core tests for group, ungroup, z-order contiguity and round-trip; one undo step per command.
+- **Open question for the user (ask before GRP1):** should images and annotations be groupable together? That would revisit the HANDOFF §4 decision.
+
+## F-SCR: scrolling capture (owner: Worker)
+Problem today: `ScrollingCaptureWindow.FinishAsync` (`App/Capture/SessionWindows.cs` ~l.328) adds every frame as a separate cropped image layer and switches the document to Free mode. The result is loose and can drift apart.
+- **SCR1 One stitched image.** On Finish, compose the accepted frames, minus their overlaps, into one `PixelBuffer` in Core (`Stitching/FrameComposer.Compose(frames)`, with a pure test on synthetic buffers). Import it as one asset and deliver it through the same path as other captures (`Vm.AddCapturesAsync(..., destination)`), so it respects the capture destination setting (new composition / append / free / copy) and appears in the recent captures library. Do not switch the layout mode.
+- **SCR2 Session panel.** Restyle it with the themed controls: NumberBoxes for header/footer rows, Auto scroll as the primary action, Capture next as secondary, Finish as primary once there are 2 or more frames, and Cancel as subtle. Add a live thumbnail strip of the stitched result (the right edge, scaled) and a progress line ("5 frames · 4,210 px").
+- **SCR3 Robustness.** Exclude the sticky header and footer automatically: on the second frame, detect rows that are identical in both frames at the top and bottom, and prefill them. Stop automatically when the frame is unchanged twice. A per-seam "Fix seam…" option remains via the existing `SeamDialog` before Finish.
+- **SCR4 Tests.** Composer (overlap 0, overlap = height − 1, differing widths rejected), sticky-row detection, and a Finish test that one image layer is added.
+- Acceptance: scrolling-capture a long web page → one image in the editor, with no visible seams at the tested overlaps.
+
+## Execution order
+1. Claude: TXT1–TXT5, then MAG1–MAG3, then STY1–STY3, then GRP (after the user answers the open question).
+2. Worker, in parallel: SCR1–SCR4, then V15, V18, V23, then V24 renders (which include TXT/MAG results once merged).
+
+## F status
+- TXT: not started · MAG: not started · STY: not started · GRP: waiting for the user's answer · SCR: not started (worker)
