@@ -3,8 +3,10 @@ using System.Windows;
 using System.Windows.Threading;
 using SnagItOpen.App.Capture;
 using SnagItOpen.App.Editor;
+using SnagItOpen.App.Infrastructure;
 using SnagItOpen.App.Shell;
 using SnagItOpen.Storage;
+using SnagItOpen.Storage.Settings;
 using SnagItOpen.Windows.Shell;
 
 namespace SnagItOpen.App;
@@ -18,6 +20,7 @@ public partial class App : Application
     private const string AppId = "SnagItOpen";
     private SingleInstanceService? _instance;
     private AppServices? _services;
+    private ThemeService? _theme;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -37,6 +40,8 @@ public partial class App : Application
         }
 
         DispatcherUnhandledException += OnUnhandled;
+        // Light until U03 wires the ThemeMode setting; chrome does not use tokens yet, so nothing changes visually.
+        _theme = new ThemeService(this, AppTheme.Light);
         try
         {
             _services = new AppServices(AppPaths.Default());
@@ -106,6 +111,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _instance?.Dispose();
+        _theme?.Dispose();
         _services?.Dispose();
         base.OnExit(e);
     }

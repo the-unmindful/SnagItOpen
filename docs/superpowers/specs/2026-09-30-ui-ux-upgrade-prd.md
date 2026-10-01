@@ -454,7 +454,7 @@ Each task is one session and one commit. "Deps" must be done first. "Done when" 
 
 ### Milestone 1: foundation (no visible layout change)
 
-- [ ] **U01 Theme tokens and ThemeService.** Deps: none. Req: 5.1, 5.2, R-E1.9, R-E13.4.
+- [x] **U01 Theme tokens and ThemeService.** Deps: none. Req: 5.1, 5.2, R-E1.9, R-E13.4.
   Files: `App/Themes/Tokens.{Light,Dark,HighContrast}.xaml`, `App/Infrastructure/ThemeService.cs`, `App.xaml` (merge dictionaries), `App.xaml.cs` (init).
   Do: load tokens by `System | Light | Dark` (read `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`), switch to high contrast when `SystemParameters.HighContrast`, listen to `SystemEvents.UserPreferenceChanged`, raise `ThemeChanged`, and set the dark title bar for every window. The theme mode is a constructor argument for now (U03 adds the setting).
   Done when: a Windows.Tests test loads each token dictionary and asserts that all three have the same key set and every value is a `Brush` or `Color`; the app starts unchanged in Light.

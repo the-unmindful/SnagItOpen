@@ -3,6 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
+        <ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries>
+            <!-- Index 0 is the colour token set; ThemeService swaps it at runtime. -->
+            <ResourceDictionary Source="/SnagItOpen;component/Themes/Tokens.Light.xaml" />
+        </ResourceDictionary.MergedDictionaries>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <Style x:Key="ToolbarButton" TargetType="Button">
             <Setter Property="Margin" Value="2" />
@@ -23,5 +28,6 @@
         <Style TargetType="RadioButton">
             <Setter Property="Margin" Value="0,3" />
         </Style>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>
