@@ -2,6 +2,8 @@
 
 Read this first in any new session. Last updated 2026-10-01. **UI/UX upgrade implementation is complete on local branch `ui-upgrade`**, version 0.2.0 preview. Work stays on this branch; no push, merge or installation was performed. Local `master` tracks `origin/main` on https://github.com/the-unmindful/SnagItOpen (pushed at merge `c410a1a`). Check the current branch before editing.
 
+**Remote (2026-10-02):** branch `ui-upgrade` is pushed to `origin/ui-upgrade` (tracking; `main` unchanged at `19ccd38`). Not merged into `main`; a PR can be opened at https://github.com/the-unmindful/SnagItOpen/pull/new/ui-upgrade. The installed copy (`%LOCALAPPDATA%\Programs\SnagItOpen`) is the `a770d50` build.
+
 ## 1. What this is
 
 A local, offline Windows screenshot capture and image editor, similar to Snagit. It is built with C# / .NET 10 / WPF, with no third-party runtime packages. The repository root is this folder (`workspace\Softwares\SnagItOpen`), which is its own git repo.
