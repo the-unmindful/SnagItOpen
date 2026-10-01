@@ -1,0 +1,43 @@
+Building SnagItOpen 0.2.0 (win-x64)
+  Determining projects to restore...
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Windows\SnagItOpen.Windows.csproj (in 92 ms).
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Core\SnagItOpen.Core.csproj (in 85 ms).
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Imaging\SnagItOpen.Imaging.csproj (in 92 ms).
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Storage\SnagItOpen.Storage.csproj (in 92 ms).
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.App\SnagItOpen.App.csproj (in 92 ms).
+  2 of 7 projects are up-to-date for restore.
+  SnagItOpen.Core -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Core\bin\Release\net10.0\SnagItOpen.Core.dll
+  SnagItOpen.Imaging -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Imaging\bin\Release\net10.0-windows\SnagItOpen.Imaging.dll
+  SnagItOpen.Windows -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Windows\bin\Release\net10.0-windows\SnagItOpen.Windows.dll
+  SnagItOpen.Storage -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Storage\bin\Release\net10.0\SnagItOpen.Storage.dll
+  SnagItOpen.App -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.App\bin\Release\net10.0-windows\SnagItOpen.dll
+  SnagItOpen.Core.Tests -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\tests\SnagItOpen.Core.Tests\bin\Release\net10.0\SnagItOpen.Core.Tests.dll
+  SnagItOpen.Windows.Tests -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\tests\SnagItOpen.Windows.Tests\bin\Release\net10.0-windows\SnagItOpen.Windows.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:03.81
+Test run for E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\tests\SnagItOpen.Core.Tests\bin\Release\net10.0\SnagItOpen.Core.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:   211, Skipped:     0, Total:   211, Duration: 193 ms - SnagItOpen.Core.Tests.dll (net10.0)
+Test run for E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\tests\SnagItOpen.Windows.Tests\bin\Release\net10.0-windows\SnagItOpen.Windows.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:   226, Skipped:     0, Total:   226, Duration: 11 s - SnagItOpen.Windows.Tests.dll (net10.0)
+  Determining projects to restore...
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Core\SnagItOpen.Core.csproj (in 191 ms).
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Storage\SnagItOpen.Storage.csproj (in 196 ms).
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Imaging\SnagItOpen.Imaging.csproj (in 196 ms).
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Windows\SnagItOpen.Windows.csproj (in 196 ms).
+  Restored E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.App\SnagItOpen.App.csproj (in 196 ms).
+  SnagItOpen.Core -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Core\bin\Release\net10.0\SnagItOpen.Core.dll
+  SnagItOpen.Imaging -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Imaging\bin\Release\net10.0-windows\SnagItOpen.Imaging.dll
+  SnagItOpen.Windows -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Windows\bin\Release\net10.0-windows\SnagItOpen.Windows.dll
+  SnagItOpen.Storage -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.Storage\bin\Release\net10.0\SnagItOpen.Storage.dll
+  SnagItOpen.App -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\src\SnagItOpen.App\bin\Release\net10.0-windows\win-x64\SnagItOpen.dll
+  SnagItOpen.App -> E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\artifacts\win-x64\
+Package: E:\Misc\test\opencode-trial\workspace\Softwares\SnagItOpen\artifacts\SnagItOpen-0.2.0-win-x64.zip
+SHA-256: 49653f16ab19c0d8f93f3f05e13015994bdc8a65fff1b016dbc5457cf0d31c08

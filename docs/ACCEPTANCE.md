@@ -59,7 +59,7 @@ Run on the user's actual displays. If a configuration is unavailable, mark it un
 ## Release D: annotations, recovery, and baseline distribution
 
 - [ ] Rectangle/arrow/text/highlight/step preview matches flattened export.
-- [ ] Move/crop/resize an annotated image; linked annotations remain attached and clipped correctly.
+- [ ] Move/crop/resize/delete an image; canvas annotations retain their independent document positions and are not clipped to the image.
 - [ ] Text typing, selection, multiline text, and IME work without capture shortcuts firing.
 - [ ] Opaque redaction stays fully opaque in PNG/JPEG/clipboard output; no source data/metadata is embedded.
 - [ ] Saving editable project discloses that original/cropped/redacted source pixels remain in that file.
@@ -112,3 +112,30 @@ Run on the user's actual displays. If a configuration is unavailable, mark it un
 ## End-to-end acceptance scenario
 
 Capture two regions from different applications. Import a third image. Combine vertically with matched width, gap12, padding16. Crop the second image. Switch to Free and place a magnified detail beside it. Add callout, numbered steps, and opaque redaction. Save editable project, export PNG, copy to another app, close/reopen project, move one image and its annotations, undo, then export JPEG on white. Finally capture a long static page with scrolling mode and correct a seam manually. All operations are local, and the saved project remains editable.
+
+## UI/UX upgrade — 0.2.0
+
+All required implementation tasks U01–U38 and U40 are implemented. Optional U39 was excluded. Automated evidence is in `evidence/verification.md` and `evidence/ui-accessibility.md`. Checked lines below indicate automated coverage; unchecked lines require actual desktop acceptance and remain open.
+
+- [x] Theme-token parity; settings v1/v2→v3 and corrupt UI-state fallback; recent projects/tips/window-placement validation.
+- [x] Shared-control parsing, keyboard contracts, mixed state, toast bounds/lifetime, typed dialogs and settings validation/Cancel.
+- [x] Layered canvas avoids document redraw on hover; annotation geometry, snapping, spacing and rendering regressions pass.
+- [x] Command inventory covers menu leaves, all 17 tools, toolbar actions and six settings pages; displayed gestures are dispatched or globally registered. Clearing a capture hotkey clears its label.
+- [x] Inspector/annotation/image controls retain their trees across updates; gallery thumbnails/cache/storage/apply/undo and effect-gallery contracts pass.
+- [x] Capture Adjust handles, keyboard precision, clamping, Escape/Enter lifecycle, physical sampling and chrome placement pass fixture tests.
+- [x] Library search/filter/sort/keyboard actions, native passive toast styles and click-through pin recovery/zoom regressions pass.
+- [x] Visible focusable shell controls have automation names in three themes at 1280/1000/800/640 DIP; renders at 100/150/200% were generated and representative images reviewed.
+- [ ] Live theme switching; keyboard focus rings on every control; F6/Shift+F6 regions; Tab escape from canvas; all gallery and menu keyboard paths.
+- [ ] 200% Windows text size, Narrator, OS High contrast and mixed-monitor window-placement transitions. Render DPI evidence alone does not pass these.
+- [ ] Every command-bar/Classic/rail action and collapsed Layers/Properties flyout in an interactive workflow; no hidden control covers content.
+- [ ] Change a focused inspector field, undo, check mixed selections; drag a slider and verify exactly one undo step.
+- [ ] Style tile create/rename/reorder/hide/restore; apply arrow curve/rectangle dash/effect presets and verify saved-project/export consistency.
+- [ ] Settings search every page; Cancel restores theme; capture preset CRUD/reorder/live filename examples and re-registered shortcuts.
+- [ ] Immediate capture default and optional Adjust: every action button, mode key, shape hole, loupe/color, fixed/aspect picker, last-region notice and countdown.
+- [ ] Actual overlay/action bar/countdown/pins absent from captured pixels at 100%/150%; negative-origin and mixed-DPI monitors.
+- [ ] Copy-only hidden capture toast lets typing continue in the target app; Edit/Pin/Show in folder work; notifications disabled still allow explicit Drag.
+- [ ] Copy as file into Explorer; drag out to Explorer/chat; preserve PNG alpha where supported and the opaque fallback where required.
+- [ ] Library views/preview/retention/pin badges; tray presets/recents/live hotkeys and pin close-all/disable-click-through; pin recovery on minimize/restore.
+- [ ] First-run notice appears once; missing recent projects can be removed; coach marks remain dismissed after restart.
+
+Live computer-use access to SnagItOpen was not approved in this session. Hardware/external-app/assistive-technology checks above must remain unchecked until someone completes them on the target desktop.

@@ -1,6 +1,6 @@
 # SnagItOpen hand-off
 
-Read this first in any new session. Last updated 2026-10-01. Local branch `master` tracks `origin/main` on https://github.com/the-unmindful/SnagItOpen (pushed at merge `c410a1a`). **UI/UX upgrade work happens on local branch `ui-upgrade`** (user's instruction: not on `master`). Check `git branch` first and switch to `ui-upgrade` if needed.
+Read this first in any new session. Last updated 2026-10-01. **UI/UX upgrade implementation is complete on local branch `ui-upgrade`**, version 0.2.0 preview. Work stays on this branch; no push, merge or installation was performed. Local `master` tracks `origin/main` on https://github.com/the-unmindful/SnagItOpen (pushed at merge `c410a1a`). Check the current branch before editing.
 
 ## 1. What this is
 
@@ -11,21 +11,20 @@ A local, offline Windows screenshot capture and image editor, similar to Snagit.
 - **Shell is Windows PowerShell 5.1.** `&&` does not work; use `;` or `if ($?) { }`. `rg` is not installed; use the Grep tool.
 - **SDK:** .NET 10.0.401, installed per user. If `dotnet --list-sdks` shows no 10.x, run
   `$env:PATH = "$env:LOCALAPPDATA\Microsoft\dotnet;$env:PATH"`.
-- **Verification gate (run after every change):**
+- **Verification gate (after coherent batches, per the user's speed instruction; avoid repeating after minor edits):**
   ```powershell
-  dotnet build .\SnagItOpen.slnx -c Debug
-  dotnet test .\tests\SnagItOpen.Core.Tests\SnagItOpen.Core.Tests.csproj -c Debug
-  dotnet test .\tests\SnagItOpen.Windows.Tests\SnagItOpen.Windows.Tests.csproj -c Debug
+  dotnet build .\SnagItOpen.slnx -c Debug /m:1 /nr:false
+  dotnet test .\tests\SnagItOpen.Core.Tests\SnagItOpen.Core.Tests.csproj -c Debug --no-build
+  dotnet test .\tests\SnagItOpen.Windows.Tests\SnagItOpen.Windows.Tests.csproj -c Debug --no-build
   .\scripts\publish.ps1          # Release build + both suites + package in artifacts\
   ```
-  Expected at hand-off: **0 warnings, 0 errors, 162 Core + 128 Windows = 290 tests passing.**
-- **Before building, stop the running app.** The installed copy locks nothing in the repo, but a copy started from `bin\` does:
-  `Get-Process SnagItOpen -ErrorAction SilentlyContinue | Stop-Process -Force`.
+  Expected at hand-off: **0 warnings, 0 errors, 211 Core + 226 Windows = 437 tests passing.** Final exact commands and release evidence are in `docs/evidence/verification.md`.
+- **Before building, stop only your own smoke process if it locks the output.** Verify its PID and executable path under this repo's `bin\` or `artifacts\`. Do not terminate the user's installed app or all processes with the same name.
 - **Smoke runs must use a temp data folder:** set `$env:SNAGITOPEN_DATA` to a folder under `E:\Misc\test\opencode-trial\temp\opencode`, so real user data is never touched.
 - **Don't run a build/test in the same parallel batch as the file edit it should check.** It can run before the edit lands and report a stale pass. This happened several times in the first session.
 - **Read a file before editing it**, and after a batch of edits check `git diff --stat` to confirm each edit actually landed.
 - **Commits:** small, one per feature step, message style `Area: what changed`. Commit locally. Do not push unless the user asks. Remote `origin` is https://github.com/the-unmindful/SnagItOpen; local `master` pushes to remote `main` (`git push origin master:main`). The repo is MIT licensed (`LICENSE`, from GitHub's initial commit).
-- **Reinstall after changes the user wants to try:** `.\scripts\install.ps1` (options: `-StartWithWindows`, `-DesktopShortcut`, `-NoLaunch`). It installs to `%LOCALAPPDATA%\Programs\SnagItOpen` and needs no admin rights. Quit the running tray copy first.
+- **Installation is a separate user action:** `.\scripts\install.ps1` (options: `-StartWithWindows`, `-DesktopShortcut`, `-NoLaunch`). It installs to `%LOCALAPPDATA%\Programs\SnagItOpen`. Development completion does not imply permission to replace the installed copy.
 - `LF will be replaced by CRLF` warnings from git are harmless.
 
 ### 2a. Technical learnings (mistakes not to repeat)
@@ -73,7 +72,7 @@ Key App files:
 - **Text is edited in place on the canvas** (Ctrl+Enter or click away commits, Esc cancels).
 - **Locked canvas:** anything outside it is not exported, copied or pinned. The editor shows outside content Dimmed by default (Show/Hide available, saved as a preference).
 - **Project schema is version 2**; v1 opens and is upgraded. Newer files fail with a clear message.
-- **Settings version 2:** close-to-tray is on by default; region capture defaults to PrintScreen, falling back to Ctrl+PrintScreen when Windows reserves PrintScreen.
+- **Settings version 3:** v1/v2 migrate; close-to-tray stays on by default; region capture defaults to PrintScreen, falling back to Ctrl+PrintScreen when Windows reserves PrintScreen. Independent `ui-state.json` stores panel/window placement, recent projects/commands and dismissed tips. Editable project schema remains 2.
 - **Gestures:** Shift/Ctrl+click adds or removes from the selection; Ctrl+drag duplicates; Ctrl+Alt+C / Ctrl+Alt+V copy and paste style; "★ Set as default" makes a selected item the tool default.
 
 ## 5. Status
@@ -86,10 +85,12 @@ Done (all committed; see `git log --oneline`):
 - App icon: red rounded square with a white "S" (`src/SnagItOpen.App/Assets/SnagItOpen.ico`, 8 sizes 16–256). Regenerate with `.\scripts\make-icon.ps1`. Set as `<ApplicationIcon>`, so exe, taskbar, windows, shortcuts and tray all use it. The tray loads the frame at `SmallIconSize`, so it stays sharp at high DPI.
 - Empty-canvas start card (`MainWindow.xaml`, inside the canvas `Grid`): replaces the old drawn text that the buttons overlapped. Shows Capture region / Import / Paste buttons and a shortcuts list; the global hotkey labels come from the registered bindings (`UpdateStartCardKeys`). It is bound to `IsEmpty`, so it disappears as soon as anything is added. `CanvasView` now draws text only when content exists but is all hidden.
 
-Not yet done / next up:
-1. **UI/UX upgrade PRD (approved by the user 2026-10-01):** `docs/superpowers/specs/2026-09-30-ui-ux-upgrade-prd.md`. It covers the design system (themes, icons, shared controls), editor shell, canvas, inspector, capture overlay, feedback, dialogs, settings, library, pin, tray, accessibility and command palette as tasks U01–U40 (section 12). Phase B (template / quick-style gallery) is epic E4, tasks U22–U23. The section 11 answers are recorded in the PRD: capture immediately on release by default (Adjust phase + action bar available via a setting), Copy is the primary button, tool rail by default with an optional Classic toolbar, fixed blue selection accent. Work through the tasks in the PRD's dependency order, one commit per task; ticked tasks in PRD section 12 are done.
-2. **Manual acceptance has never been run.** Nothing interactive has been verified by hand by the assistant. See `docs/ACCEPTANCE.md`, and the list in section 6.
-3. Not implemented by design so far: OCR; Windows.Graphics.Capture backend (GDI only); mixed-DPI and multi-monitor setups are untested.
+Upgrade completion:
+0. Local implementation commits: `3dc19de` (Core/storage/imaging foundations) and `d238e43` (editor/capture/desktop UI and Windows regressions). Documentation follows in the next local commit. Final Release verification: **437 passed, 0 failed/skipped, 0 warnings/errors**; package `artifacts/SnagItOpen-0.2.0-win-x64.zip` and checksum exist.
+1. **Approved UI/UX PRD U01–U38 and U40 are implemented.** U39 (Mica/system selection accent) was optional and excluded. The approved choices remain: immediate release default, optional Adjust, red Copy primary, tool rail with Classic option, fixed blue selection accent. Implementation and automated coverage are recorded in the PRD and evidence; interactive criteria are not silently marked passed.
+2. **Manual acceptance remains open.** WPF theme/layout renders and native-window regression tests passed; computer-use access to SnagItOpen was not approved, so a live UI walkthrough could not be completed. See `docs/ACCEPTANCE.md` and `docs/evidence/ui-accessibility.md` for the exact remaining cases.
+3. Not implemented by design: OCR; Windows.Graphics.Capture backend (GDI only). Real mixed-DPI and multi-monitor setups are untested.
+4. Durable domain checkpoints: `docs/upgrade-handoff-{root,canvas,capture,controls}.md`. The recovered OpenCode session is `ses_f0c595f31ffeowlekADMg5JD59` in `E:\Misc\test\opencode-trial\data\opencode\opencode.db`; its last interrupted file was `Shell/AppServices.cs`. No ongoing worker edits remain.
 
 ## 6. Things the user should confirm by hand (never verified on screen)
 

@@ -151,6 +151,7 @@ Snagit is the reference (TechSmith feature page, checked 2026-09-30). It offers 
 | `Text.Secondary` | #5C5C5C | #BDBDBD | hints, captions (≥4.5:1 on Surface) |
 | `Text.Disabled` | #A0A0A0 | #6E6E6E | |
 | `Text.OnAccent` | #FFFFFF | #FFFFFF | |
+| `Text.Selected` | #1B1B1B | #F2F2F2 | HighlightText in High contrast; keeps highlighted controls legible |
 | `Accent.Brand` | #C81E26 | #E0474E | primary buttons, logo |
 | `Accent.BrandHover` | #A3141B | #F0666C | |
 | `Accent.Select` | #0067C0 | #4CC2FF | selection outlines, handles, focus on canvas |
@@ -450,7 +451,7 @@ Requirement IDs (`R-Ex.n`) are referenced by the tasks in section 12.
 
 ## 12. Tasks
 
-Each task is one session and one commit. "Deps" must be done first. "Done when" lists the checks. Every task also runs the gate in section 0 and adds its manual lines to `docs/ACCEPTANCE.md` → "UI/UX upgrade".
+The user authorized finishing the remaining work in larger coherent batches on 2026-10-01. Dependencies and all required scope are preserved; commits and verification are grouped by implementation domain. Checked tasks below mean implementation and automated verification are complete. Manual clauses in "Done when" remain explicitly open in `docs/ACCEPTANCE.md` → "UI/UX upgrade" and `docs/evidence/ui-accessibility.md`; checkbox completion does not assert those live desktop checks passed. U39 remains excluded optional scope.
 
 ### Milestone 1: foundation (no visible layout change)
 
@@ -464,7 +465,7 @@ Each task is one session and one commit. "Deps" must be done first. "Done when" 
   Do: implicit styles for the controls listed in 5.1 using `DynamicResource` tokens only; a shared `FocusVisualStyle`; `ThemeService.AnimationsEnabled`. Move `StartButton`, `StartPrimaryButton`, `KeyCap` from `MainWindow.xaml` into `Controls.xaml` with the same keys. Delete the unused `ToolbarButton` style and `BoolToVis`.
   Done when: the app builds and runs with restyled stock controls in Light and Dark (manual); keyboard focus shows rings on buttons, checkboxes and text boxes (manual).
 
-- [ ] **U03 UiState store and settings v3.** Deps: none. Req: 5.7, R-E9.7, section 8.
+- [x] **U03 UiState store and settings v3.** Deps: none. Req: 5.7, R-E9.7, section 8.
   Files: `Storage/Settings/UiState.cs`, `Storage/Settings/AppSettings.cs`, `Shell/AppServices.cs`, `tests/SnagItOpen.Windows.Tests/SettingsMigrationTests.cs`, new `UiStateTests.cs`.
   Do: `UiState` record plus `UiStateStore` on `JsonFileStore` with sanitize; the new `AppSettings` fields and 2 → 3 migration; wire `ThemeService` to `ThemeMode`. Move the inspector section open-state dictionary (`AnnotationPropertiesPanel.cs:25-28`) into `UiState`. Save window placement on close and restore it on start (ignore off-screen).
   Done when: tests for v1→v3, v2→v3, unknown enums, corrupt `ui-state.json` → defaults, and off-screen bounds rejection pass.
@@ -473,157 +474,157 @@ Each task is one session and one commit. "Deps" must be done first. "Done when" 
   Files: `App/Themes/Icons.xaml`, test `IconResourceTests.cs`.
   Done when: every icon in the 5.5 list exists; the test parses each `Icon.*` and asserts bounds within 0–16; a scratch preview (not committed) was checked at 100% and 200% in both themes.
 
-- [ ] **U05 Remove hard-coded chrome colours.** Deps: U01, U02. Req: M4, R-E2.6 (backdrop, checker only).
+- [x] **U05 Remove hard-coded chrome colours.** Deps: U01, U02. Req: M4, R-E2.6 (backdrop, checker only).
   Files: `MainWindow.xaml`, `SettingsWindow.cs`, `LibraryWindow.cs`, `CaptureGallery.cs`, `PinnedImageWindow.cs`, `HotkeyBox.cs`, `ColorPicker.cs` (chrome only), `CanvasView.cs` (backdrop and checker only).
   Do: replace literals with `DynamicResource` / `SetResourceReference`. Documented exceptions: annotation default colours (`MainWindow.xaml.cs:416-428`), the picker palette (`ColorPicker.cs:23-28`), and overlay colours (done in U25/U28).
   Done when: a Grep for `#FF[0-9A-F]{6}|Color.FromRgb|Color.FromArgb|new SolidColorBrush` in `src/SnagItOpen.App` returns only the exceptions (list them in the commit message); Dark theme shows no white panels (manual).
 
-- [ ] **U06 Shared controls.** Deps: U02, U04. Req: 5.6.
+- [x] **U06 Shared controls.** Deps: U02, U04. Req: 5.6.
   Files: `App/Controls/*.cs` (IconButton, ToolRailButton, SplitButton, NumberBox, SliderRow, ColorSwatchButton, SegmentedControl, InspectorSection, InfoBar), `Controls.xaml` templates.
   Do: implement the contracts. `NumberBox` parsing and clamping sit in a small pure helper with tests. Do not yet migrate the panels.
   Done when: `NumberBoxTests` cover min/max clamp, invalid text, Esc revert, mixed display, Shift step; `IconButton` composes its tooltip and AutomationName (STA test).
 
 ### Milestone 2: canvas
 
-- [ ] **U07 Layered canvas rendering.** Deps: U05. Req: R-E2.1, M3, N6.
+- [x] **U07 Layered canvas rendering.** Deps: U05. Req: R-E2.1, M3, N6.
   Files: `Editor/CanvasView.cs`, test `CanvasLayerTests.cs`.
   Do: split `OnRender` into a document `DrawingVisual` and an adorner `DrawingVisual` (override `VisualChildrenCount`/`GetVisualChild`); invalidate them separately; add `DocumentRenderCount`.
   Done when: a test with 10 layers moves the hover point 50 times and asserts `DocumentRenderCount` is unchanged; all existing render/export tests pass unchanged; no visual difference at 25/100/400% (manual).
 
-- [ ] **U08 Adorners and cursors.** Deps: U07, U04. Req: R-E2.2, R-E2.3, R-E2.6.
+- [x] **U08 Adorners and cursors.** Deps: U07, U04. Req: R-E2.2, R-E2.3, R-E2.6.
   Files: `Editor/CanvasView.cs`, `scripts/make-cursors.ps1`, `App/Assets/Cursors/rotate.cur`, `SnagItOpen.App.csproj` (resource).
   Do: token-based frozen pens and brushes rebuilt on `ThemeChanged`; new handle shapes; lock badge from `Icon.Lock`; sheet shadow; cursor hit-testing via `AnnotationGeometry` handles. Delete dead `RotateDistanceDips`, `ResizeRectD`, `ResizeAnnotation` after confirming no test uses them.
   Done when: a test asserts the cursor at a rotate-handle point is the rotate cursor and at a line end is Cross; manual checks in Light, Dark, High contrast.
 
-- [ ] **U09 Keyboard focus model.** Deps: U07. Req: R-E2.4, R-E2.5, R-E13.2.
+- [x] **U09 Keyboard focus model.** Deps: U07. Req: R-E2.4, R-E2.5, R-E13.2.
   Files: `Editor/CanvasView.cs`, `Shell/MainWindow.xaml.cs` (`OnPreviewKeyDown` Tab case `:573`), `Editor/ObjectsList.cs`.
   Do: keyboard-only focus ring; the Tab rule; F6/Shift+F6 region cycling (a list of region roots, update in U14); focusable eye/lock buttons with names and Space / Ctrl+L.
   Done when: an STA test sends Tab to a focused canvas with no selection and asserts focus leaves it; manual keyboard walk-through.
 
 ### Milestone 3: shell
 
-- [ ] **U10 ToolCatalog and CommandRegistry.** Deps: U04. Req: R-E1.5, R-E15.1, R-E9.2.
+- [x] **U10 ToolCatalog and CommandRegistry.** Deps: U04. Req: R-E1.5, R-E15.1, R-E9.2.
   Files: `Editor/ToolCatalog.cs`, `Shell/Commands.cs`, `Infrastructure/DisplayNames.cs`, `MainWindow.xaml.cs` (replace `ToolDefs` and `ToolShortcut` with the catalog; add the new tool keys).
   Do: register every menu item's action. Menus keep their XAML but read `InputGestureText` from the registry (set in code after `InitializeComponent`). Fix the Capture tooltip.
   Done when: tests for unique tool shortcuts, one descriptor per `ToolKind`, icon keys exist, and every registry gesture is handled (R-E15.1).
 
-- [ ] **U11 Command bar.** Deps: U06, U10. Req: R-E1.1, R-E1.2, R-E1.3.
+- [x] **U11 Command bar.** Deps: U06, U10. Req: R-E1.1, R-E1.2, R-E1.3.
   Files: `MainWindow.xaml` (new `Border` row under the menu), `MainWindow.xaml.cs`.
   Do: add the command bar *alongside* the old toolbars (they are removed in U14). Implement "Copy as file" (temp PNG in `%LOCALAPPDATA%\SnagItOpen\cache\clip`, cleaned on start).
   Done when: every command-bar action works and matches its old toolbar twin (manual); Copy as file pastes into Explorer (manual).
 
-- [ ] **U12 Tool rail.** Deps: U06, U10. Req: R-E1.4, R-E1.6.
+- [x] **U12 Tool rail.** Deps: U06, U10. Req: R-E1.4, R-E1.6.
   Files: `MainWindow.xaml` (new first grid column), `MainWindow.xaml.cs` (`BuildToolBar` builds the rail from `ToolCatalog`).
   Done when: all 17 tools selectable by click and key; `ToolsBar` still present until U14; secure/not-secure tooltips correct.
 
-- [ ] **U13 Status bar and zoom control.** Deps: U06, U10. Req: R-E1.7.
+- [x] **U13 Status bar and zoom control.** Deps: U06, U10. Req: R-E1.7.
   Files: `MainWindow.xaml`, `MainWindow.xaml.cs`, `EditorViewModel.cs` (`StatusKind`, auto-clear timer), `CanvasView.cs` (`ZoomToSelection`, `FitWidth`).
   Done when: a VM test checks that a non-error status clears after the timeout (inject the clock/timer); Ctrl+2 zooms to selection.
 
-- [ ] **U14 Remove old toolbars; panels and responsive layout.** Deps: U11, U12, U13, U15 (the canvas bar controls must already live in the inspector). Req: section 6 table, R-E1.8.
+- [x] **U14 Remove old toolbars; panels and responsive layout.** Deps: U11, U12, U13, U15 (the canvas bar controls must already live in the inspector). Req: section 6 table, R-E1.8.
   Files: `MainWindow.xaml`, `MainWindow.xaml.cs`.
   Do: delete the Band-0 toolbar, the Arrange toolbar and the canvas bar; replace the Band-1 tools toolbar with a catalog-driven "Classic toolbar" shown instead of the rail when `UiState.ClassicToolbar` is on (View menu toggle, section 11 answer 3); move the content-outside warning into an InfoBar; add collapse/flyout behaviour and persist panel state; finish F6 regions.
   Done when: the window works at 1280, 1000 and 800 DIP widths (manual); no handler is left orphaned (build has no unused-handler XAML errors; Grep each deleted `Click=` name).
 
 ### Milestone 4: inspector
 
-- [ ] **U15 Inspector: Document and Image modes.** Deps: U06, U03. Req: R-E3.1 (modes 2 and 4), R-E3.2, R-E3.4.
+- [x] **U15 Inspector: Document and Image modes.** Deps: U06, U03. Req: R-E3.1 (modes 2 and 4), R-E3.2, R-E3.4.
   Files: `Editor/InspectorPanel.cs`, `Editor/ImageEdgePanel.cs` (use shared controls), `MainWindow.xaml` (host), `MainWindow.xaml.cs` (canvas-bar handlers move into the panel or call VM directly).
   Done when: all Combine, Canvas and Selected-image fields work as before; background uses the swatch; STA test: selecting another image updates values without rebuilding (`RebuildCount` stays 1).
 
-- [ ] **U16 Annotation panel migration.** Deps: U15. Req: R-E3.3, R-E3.4.
+- [x] **U16 Annotation panel migration.** Deps: U15. Req: R-E3.3, R-E3.4.
   Files: `Editor/AnnotationPropertiesPanel.cs`, `MainWindow.xaml.cs` (`RefreshPropsSoon` simplified).
   Done when: mixed state shown for segmented, combo and check rows (STA test with two differing arrows); undo during a focused field updates it in place; slider drag is still one undo step.
 
-- [ ] **U17 Privacy notes and Arrange row.** Deps: U16, U18. Req: R-E3.5, R-E3.6.
+- [x] **U17 Privacy notes and Arrange row.** Deps: U16, U18. Req: R-E3.5, R-E3.6.
   Done when: the bottom disclaimer is gone; the right InfoBar appears for Redact vs Blur/Pixelate; Arrange row enables by count (STA test).
 
 ### Milestone 5: feedback and dialogs
 
-- [ ] **U18 InfoBar and toast host; routing.** Deps: U06. Req: R-E7.1, R-E7.3, R-E7.4, R-E2.8.
+- [x] **U18 InfoBar and toast host; routing.** Deps: U06. Req: R-E7.1, R-E7.3, R-E7.4, R-E2.8.
   Files: `App/Controls/ToastHost.cs`, `MainWindow.xaml`, `EditorViewModel.cs` (a `Notify(kind, title, message, actions)` event beside `Status`), callers in `MainWindow.xaml.cs` for copy/export/save/pin.
   Done when: STA test: 4 toasts → 3 visible, oldest dropped; hover pauses dismissal; confirmations from R-E7.4 appear (manual).
 
-- [ ] **U19 Themed dialog base.** Deps: U02. Req: R-E8.1.
+- [x] **U19 Themed dialog base.** Deps: U02. Req: R-E8.1.
   Files: `Infrastructure/DialogWindow.cs`, `Infrastructure/Dialogs.cs`, `MainWindow.xaml.cs`, `App.xaml.cs`. Delete unused `Dialogs.EditText`.
   Done when: Grep finds no `MessageBox.Show` in `src/SnagItOpen.App` except inside `Dialogs.cs` fallback for failures before the theme loads.
 
-- [ ] **U20 Structured dialogs.** Deps: U19, U06. Req: R-E8.2.
+- [x] **U20 Structured dialogs.** Deps: U19, U06. Req: R-E8.2.
   Files: `Shell/Dialogs/ScaleDialog.cs`, `SeamDialog.cs`, `IntervalDialog.cs`, `MainWindow.xaml.cs`. Parsing/validation logic stays out of the window (pure helper with tests).
   Done when: validation tests pass; each dialog replaces its prompt call; the Canvas size menu item focuses the inspector section.
 
-- [ ] **U21 Shortcuts and About windows.** Deps: U10, U19. Req: R-E8.3, R-E8.4.
+- [x] **U21 Shortcuts and About windows.** Deps: U10, U19. Req: R-E8.3, R-E8.4.
   Done when: every registry gesture and tool key appears in the shortcuts window (STA test counts rows against the registry); F1 opens it; search filters.
 
 ### Milestone 6: gallery, guides, settings
 
-- [ ] **U22 Gallery storage and built-in styles.** Deps: U03. Req: R-E4.3, R-E4.5.
+- [x] **U22 Gallery storage and built-in styles.** Deps: U03. Req: R-E4.3, R-E4.5.
   Files: `Storage/Settings/AnnotationStyleStore.cs`, `Storage/Settings/BuiltInStyles.cs`, tests in `AnnotationStyleStoreTests.cs`.
   Done when: round trip, `Quick` → `Gallery` migration (once), corrupt-file fallback, 40 cap, hide/restore built-ins tests pass.
 
-- [ ] **U23 Gallery UI.** Deps: U22, U16. Req: R-E4.1, R-E4.2, R-E4.4, D9.
+- [x] **U23 Gallery UI.** Deps: U22, U16. Req: R-E4.1, R-E4.2, R-E4.4, D9.
   Files: `Editor/StyleGallery.cs`, `Editor/StyleThumbnailRenderer.cs`, `AnnotationPropertiesPanel.cs` (remove the Quick styles section).
   Done when: STA test renders a tile for each built-in and asserts non-empty pixels and cache reuse on a second call; applying a tile to a selection is one undo step (test); keyboard navigation works (manual).
 
-- [ ] **U24 Annotation snapping and spacing guides.** Deps: U08. Req: R-E5.1–R-E5.4, D5.
+- [x] **U24 Annotation snapping and spacing guides.** Deps: U08. Req: R-E5.1–R-E5.4, D5.
   Files: `Core/Layout/SpacingGuides.cs` (+ Core tests), `Core/Layout/SnapEngine.cs` (if needed), `Editor/CanvasView.cs` (`:752` snapping limited to images).
   Done when: Core tests for equal-gap detection (±1 px, both axes, no false match with 2 objects); annotations snap; Alt disables (manual).
 
-- [ ] **U25 Settings window rebuild.** Deps: U19, U06, U03. Req: R-E9.1–R-E9.5, R-E9.7.
+- [x] **U25 Settings window rebuild.** Deps: U19, U06, U03. Req: R-E9.1–R-E9.5, R-E9.7.
   Files: `Shell/SettingsWindow.cs` (split into `Shell/Settings/*.cs` page classes).
   Done when: every `AppSettings` field except `Version` and the `Last*Directory` fields is editable; Cancel reverts a previewed theme; search filters labels (STA test).
 
-- [ ] **U26 Capture preset editor.** Deps: U25. Req: R-E9.6.
+- [x] **U26 Capture preset editor.** Deps: U25. Req: R-E9.6.
   Files: `Shell/Settings/CapturePresetsPage.cs`, `Storage/Settings/PresetStores.cs` (reorder helper only).
   Done when: add/duplicate/rename/delete/reorder persist (Windows test on the store); file-name example updates live; preset hotkeys re-register after Save (manual).
 
-- [ ] **U27 Command palette.** Deps: U10, U06. Req: R-E15.2, R-E15.3, M2, D3.
+- [x] **U27 Command palette.** Deps: U10, U06. Req: R-E15.2, R-E15.3, M2, D3.
   Files: `Core/Search/FuzzyMatcher.cs` (+ Core tests), `Shell/CommandPalette.cs`, `MainWindow.xaml.cs` (Ctrl+K).
   Done when: fuzzy tests (prefix beats subsequence, case-insensitive, keyword match, empty query); the M2 coverage test passes; recent commands first.
 
 ### Milestone 7: capture
 
-- [ ] **U28 Overlay Adjust phase and keyboard precision.** Deps: U03. Req: R-E6.1, R-E6.4, D7.
+- [x] **U28 Overlay Adjust phase and keyboard precision.** Deps: U03. Req: R-E6.1, R-E6.4, D7.
   Files: `Core/Capture/RegionSelection.cs` (+ `RegionSelectionTests.cs`), `Capture/RegionOverlayWindow.cs`, `Capture/CaptureCoordinator.cs`.
   Do: `Adjusting` state, handles, move, edge keys, Esc semantics, `CaptureOnRelease` setting. Overlay colours from tokens.
   Done when: Core tests for each handle, clamping to virtual desktop bounds, aspect lock in adjust, Esc twice cancels, keyboard edge moves; manual on one monitor at 100% and 150%.
 
-- [ ] **U29 Action bar.** Deps: U28, U18. Req: R-E6.2, D1, D8.
+- [x] **U29 Action bar.** Deps: U28, U18. Req: R-E6.2, D1, D8.
   Done when: each button produces the same result as the matching destination/pin/save path (manual); bar placement flips at screen edges (pure placement function + Core test); the bar is not in the captured pixels (manual).
 
-- [ ] **U30 Loupe, mode strip, hints, shapes, window labels, countdown.** Deps: U28. Req: R-E6.3, R-E6.5–R-E6.8, R-E6.10, R-E13.6, D2.
+- [x] **U30 Loupe, mode strip, hints, shapes, window labels, countdown.** Deps: U28. Req: R-E6.3, R-E6.5–R-E6.8, R-E6.10, R-E13.6, D2.
   Done when: loupe placement pure function tested; `C` copies the correct hex from a known fixture snapshot (STA test using the overlay's sampling helper); ellipse hole visible (manual); number keys switch mode (manual).
 
-- [ ] **U31 In-overlay size/aspect picker.** Deps: U28. Req: R-E6.9.
+- [x] **U31 In-overlay size/aspect picker.** Deps: U28. Req: R-E6.9.
   Done when: the two text prompts are removed; picking 1280×720 captures exactly 1280×720 physical pixels (manual, and an existing fixed-size test still passes).
 
-- [ ] **U32 Desktop capture toast.** Deps: U18, U29. Req: R-E7.2, N5.
+- [x] **U32 Desktop capture toast.** Deps: U18, U29. Req: R-E7.2, N5.
   Files: `Shell/DesktopToastWindow.cs`, `MainWindow.xaml.cs` (`RunCaptureAsync` and presets routing, `:1367-1421`).
   Done when: Copy-only capture with the editor hidden shows the toast without taking focus (manual: typing in Notepad continues); balloons remain only for hotkey problems.
 
 ### Milestone 8: secondary windows and polish
 
-- [ ] **U33 Library window.** Deps: U19, U06, U03. Req: R-E10.1–R-E10.4, R-E10.6.
+- [x] **U33 Library window.** Deps: U19, U06, U03. Req: R-E10.1–R-E10.4, R-E10.6.
   Done when: search/sort/filter logic is a pure function with tests; keyboard shortcuts work (manual); pin badge is an icon.
 
-- [ ] **U34 Recent-captures strip.** Deps: U33. Req: R-E10.5.
+- [x] **U34 Recent-captures strip.** Deps: U33. Req: R-E10.5.
 
-- [ ] **U35 Pinned window.** Deps: U04, U02. Req: R-E11.1–R-E11.4.
+- [x] **U35 Pinned window.** Deps: U04, U02. Req: R-E11.1–R-E11.4.
   Done when: click-through toggles on and off from the tab and tray (manual); zoom range clamps 10–800% (test on the helper); existing pin tests pass.
 
-- [ ] **U36 Tray menu.** Deps: U01, U04, U10. Req: R-E12.1–R-E12.3.
+- [x] **U36 Tray menu.** Deps: U01, U04, U10. Req: R-E12.1–R-E12.3.
   Files: `SnagItOpen.Windows/Shell/TrayService.cs` (accepts renderer colours and icon bitmaps from App; it must not reference App), `MainWindow.xaml.cs` (`CreateTray`).
   Done when: hotkeys show beside items; the menu rebuilds after hotkey or preset changes; fallback to default rendering on failure.
 
-- [ ] **U37 Start card, recent projects, first run, coach marks.** Deps: U03, U10, U18. Req: R-E14.1–R-E14.4.
+- [x] **U37 Start card, recent projects, first run, coach marks.** Deps: U03, U10, U18. Req: R-E14.1–R-E14.4.
   Done when: recent list add/remove/missing tests on `UiState`; first-run InfoBar appears only once (test on the flag logic).
 
-- [ ] **U38 Accessibility sweep.** Deps: all shell tasks (U11–U21). Req: R-E13.3, R-E13.5, R-E13.7, M5.
+- [x] **U38 Accessibility sweep.** Deps: all shell tasks (U11–U21). Req: R-E13.3, R-E13.5, R-E13.7, M5.
   Done when: the automation-name tree test passes; 200% text scaling and High contrast walk-throughs recorded in `docs/evidence/ui-accessibility.md`.
 
 - [ ] **U39 Optional polish (only if approved).** Mica backdrop on Windows 11 via `DWMWA_SYSTEMBACKDROP_TYPE`, silently skipped elsewhere; "System accent" for selection.
 
-- [ ] **U40 Final cleanup and docs.** Deps: all. Delete the remaining dead code listed in section 1 (`RelayCommand`/`AsyncCommand` if still unused, `NotConverter`, VM `CycleAnnotation`/`SetLocked`/`ToggleImage`/`CancelImport`, the identity `Mixed` overload); update `README.md` screenshots text, `docs/HANDOFF.md`, and run the full UI/UX acceptance section.
+- [x] **U40 Final cleanup and docs.** Deps: all. Delete the remaining dead code listed in section 1 (`RelayCommand`/`AsyncCommand` if still unused, `NotConverter`, VM `CycleAnnotation`/`SetLocked`/`ToggleImage`/`CancelImport`, the identity `Mixed` overload); update `README.md` screenshots text, `docs/HANDOFF.md`, and run the full UI/UX acceptance section.
 
 ### Dependency order (suggested)
 
