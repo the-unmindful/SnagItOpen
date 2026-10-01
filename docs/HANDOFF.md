@@ -18,7 +18,7 @@ A local, offline Windows screenshot capture and image editor, similar to Snagit.
   dotnet test .\tests\SnagItOpen.Windows.Tests\SnagItOpen.Windows.Tests.csproj -c Debug --no-build
   .\scripts\publish.ps1          # Release build + both suites + package in artifacts\
   ```
-  Expected at hand-off: **0 warnings, 0 errors, 220 Core + 236 Windows = 456 tests passing.** Final exact commands and release evidence are in `docs/evidence/verification.md`.
+  Expected at hand-off: **0 warnings, 0 errors, 220 Core + 237 Windows = 457 tests passing.** Final exact commands and release evidence are in `docs/evidence/verification.md`.
 - **Before building, stop only your own smoke process if it locks the output.** Verify its PID and executable path under this repo's `bin\` or `artifacts\`. Do not terminate the user's installed app or all processes with the same name.
 - **Smoke runs must use a temp data folder:** set `$env:SNAGITOPEN_DATA` to a folder under `E:\Misc\test\opencode-trial\temp\opencode`, so real user data is never touched.
 - **Don't run a build/test in the same parallel batch as the file edit it should check.** It can run before the edit lands and report a stale pass. This happened several times in the first session.
@@ -88,6 +88,7 @@ Done (all committed; see `git log --oneline`):
 **Polish and editing-quality round (2026-10-01): all tasks done by Claude; the worker plan was cancelled and its worktree removed.** Plan and per-task status: `docs/superpowers/plans/2026-10-01-ui-polish-rectification.md` (V01–V24, F-TXT, F-MAG, F-STY, F-SCR, F-GRP). Release package rebuilt after the last commit: `artifacts/SnagItOpen-0.2.0-win-x64.zip` (SHA-256 96d70090…). Review renders: `docs/evidence/polish-*.png`.
 - New decisions: grouping is annotations-only (the user did not answer; this keeps §4). Magnifier: a move keeps its content (`Annotation.Translate`); the source is edited via its dashed outline. Text: old files load as `Sizing=Fixed`/`VerticalAlign=Top`, so they render unchanged. Scrolling capture: one stitched image through the normal capture destination.
 - To check by hand (never seen live, because the user's Debug app held the build lock all session): text typing/auto-grow and centring; lens source drag; gallery double-click/drag insert; Ctrl+G group then click-again drill-in; scrolling capture on a real page with a sticky header; the status-bar canvas-size button (the headless render showed it clipped, "6 × 364" for 456 × 364 px).
+- 2026-10-01 later: `Label` and classic-toolbar (ToolBar.*StyleKey) styles fix dark-mode text and icons. New setting `AppSettings.AfterDrawing` (Settings > General; default KeepToolSelectNew, like Affinity). Comparison builds: `artifacts\win-x64` = previous (scrolling round 1), `artifacts\win-x64-current` = latest (`8c2db0f`). The release zip was not refreshed because a running copy locked `artifacts\win-x64`.
 - Not done (ideas): group resize handles and an Objects-list group row; auto-fit the view when the first content arrives in an empty document.
 
 ### Requests between agents
