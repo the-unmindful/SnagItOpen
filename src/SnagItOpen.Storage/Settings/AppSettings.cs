@@ -23,6 +23,10 @@ public static class HotkeyActions
 public enum OutsideCanvasMode { Dim, Show, Hide }
 
 /// <summary>Persisted user preferences (settings.json).</summary>
+/// <summary>Behaviour after a drawing tool adds an element.</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<AfterDrawBehavior>))]
+public enum AfterDrawBehavior { KeepToolSelectNew, SelectToolSelectNew, SelectToolSelectNothing }
+
 public sealed record AppSettings
 {
     public const int CurrentVersion = 3;
@@ -42,6 +46,8 @@ public sealed record AppSettings
     public int CaptureDelaySeconds { get; init; }
     public bool IncludeCursor { get; init; }
     public CaptureDestination DefaultDestination { get; init; } = CaptureDestination.AppendBelow;
+    /// <summary>What happens after a drawing tool creates an element (default: like Affinity/Illustrator, keep the tool, select the new element).</summary>
+    public AfterDrawBehavior AfterDrawing { get; init; } = AfterDrawBehavior.KeepToolSelectNew;
     /// <summary>Closing the editor hides it; SnagItOpen keeps running in the tray with its hotkeys.</summary>
     public bool CloseToTray { get; init; } = true;
     /// <summary>Start SnagItOpen hidden in the tray when you sign in to Windows.</summary>
@@ -123,6 +129,7 @@ public sealed record AppSettings
         {
             CaptureDelaySeconds = CaptureOptions.AllowedDelays.Contains(CaptureDelaySeconds) ? CaptureDelaySeconds : 0,
             DefaultDestination = Enum.IsDefined(DefaultDestination) ? DefaultDestination : CaptureDestination.AppendBelow,
+            AfterDrawing = Enum.IsDefined(AfterDrawing) ? AfterDrawing : AfterDrawBehavior.KeepToolSelectNew,
             JpegQuality = Math.Clamp(JpegQuality, 1, 100),
             OutsideCanvas = Enum.IsDefined(OutsideCanvas) ? OutsideCanvas : OutsideCanvasMode.Dim,
             ThemeMode = Enum.IsDefined(ThemeMode) ? ThemeMode : AppTheme.System,

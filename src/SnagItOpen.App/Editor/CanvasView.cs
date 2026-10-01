@@ -132,6 +132,10 @@ public sealed class CanvasView : FrameworkElement
     }
     private void OnInsertStyle(Annotation style) => InsertStyled(style);
 
+    /// <summary>Raised after a drawing tool (not paste or insert) adds an element; the shell applies the after-drawing setting.</summary>
+    public event Action<Guid>? AnnotationDrawn;
+    private void AddDrawn(EditorViewModel vm, Annotation a) { vm.AddAnnotation(a); AnnotationDrawn?.Invoke(a.Id); }
+
     protected override void OnDragOver(DragEventArgs e)
     {
         if (e.Data.GetDataPresent(StyleGallery.StyleKindFormat)) { e.Effects = DragDropEffects.Copy; e.Handled = true; return; }
@@ -1309,7 +1313,7 @@ public sealed class CanvasView : FrameworkElement
             if (tiny) { vm.Status = "Drag over the detail you want to magnify."; return; }
             double z = Math.Clamp(st.Zoom, 1.25, 8);
             var dest = new RectD(drRect.Right + 16, drRect.Y, drRect.Width * z, drRect.Height * z);
-            vm.AddAnnotation(Proto<MagnifierAnnotation>(Tool) with { SourceRegion = drRect, Bounds = dest });
+            AddDrawn(vm, Proto<MagnifierAnnotation>(Tool) with { SourceRegion = drRect, Bounds = dest });
             return;
         }
         if (tiny) return;
@@ -1329,7 +1333,7 @@ public sealed class CanvasView : FrameworkElement
             _ => null,
         };
         if (ann is null) return;
-        vm.AddAnnotation(ann);
+        AddDrawn(vm, ann);
     }
 
     private static LineAnnotation PlaceLine(LineAnnotation prototype, PointD start, PointD end) => prototype with
@@ -1346,7 +1350,7 @@ public sealed class CanvasView : FrameworkElement
         var pts = _freehand.ToList();
         _freehand.Clear();
         var simplified = CaptureMask.Simplify(pts, 0.75, FreehandAnnotation.MaxPoints);
-        vm.AddAnnotation(Proto<FreehandAnnotation>(ToolKind.Freehand) with { Points = simplified, Bounds = FreehandAnnotation.BoundsOf(simplified) });
+        AddDrawn(vm, Proto<FreehandAnnotation>(ToolKind.Freehand) with { Points = simplified, Bounds = FreehandAnnotation.BoundsOf(simplified) });
     }
 
     private void PlaceClickAnnotation(DocumentState doc)
@@ -1361,14 +1365,14 @@ public sealed class CanvasView : FrameworkElement
                     double size = proto.Bounds.Width > 4 ? proto.Bounds.Width : 32;
                     var step = proto with { Bounds = new RectD(p.X - size / 2, p.Y - size / 2, size, size), Number = DocumentOps.NextStepNumber(doc) };
                     if (proto.Tail is not null) step = step with { Tail = new PointD(p.X + size * 1.5, p.Y + size) };
-                    vm.AddAnnotation(step);
+                    AddDrawn(vm, step);
                     break;
                 }
             case ToolKind.Stamp:
                 {
                     var proto = Proto<StampAnnotation>(Tool);
                     double size = proto.Bounds.Width > 4 ? proto.Bounds.Width : 64;
-                    vm.AddAnnotation(proto with { Bounds = new RectD(p.X - size / 2, p.Y - size / 2, size, size), Symbol = proto.Symbol ?? StampSymbols.Check, AssetId = null });
+                    AddDrawn(vm, proto with { Bounds = new RectD(p.X - size / 2, p.Y - size / 2, size, size), Symbol = proto.Symbol ?? StampSymbols.Check, AssetId = null });
                     break;
                 }
             case ToolKind.Text:

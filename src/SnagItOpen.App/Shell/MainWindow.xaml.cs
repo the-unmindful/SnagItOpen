@@ -72,6 +72,7 @@ public partial class MainWindow : Window
         Canvas.SnapEnabled = _services.Settings.SnapEnabled;
         Canvas.ViewChanged += () => ZoomBox.Value = Math.Round(Canvas.Zoom * 100);
         Canvas.EditTextRequested += OnEditText;
+        Canvas.AnnotationDrawn += ApplyAfterDrawing;
         Canvas.ViewChanged += PositionTextEditor;
         Canvas.ContextMenuOpening += OnCanvasContextMenu;
         Canvas.ContextMenu = new ContextMenu(); // enables ContextMenuOpening; replaced on open
@@ -342,6 +343,16 @@ public partial class MainWindow : Window
 
     // ================================================================== toolbar and tool styles
 
+    /// <summary>After-drawing preference (Settings > Editing): keep the tool, or switch to Select with or without the new element selected.</summary>
+    private void ApplyAfterDrawing(Guid id)
+    {
+        switch (_services.Settings.AfterDrawing)
+        {
+            case AfterDrawBehavior.SelectToolSelectNew: SelectTool(ToolKind.Select); _vm.Select([], [id]); break;
+            case AfterDrawBehavior.SelectToolSelectNothing: SelectTool(ToolKind.Select); _vm.ClearSelection(); break;
+        }
+    }
+
     private void SelectTool(ToolKind kind)
     {
         Canvas.CancelGesture();
@@ -491,7 +502,7 @@ public partial class MainWindow : Window
             var updated = AnnotationRenderer.Fit(t with { Text = text });
             if (!WpfConvert.IsFontAvailable(updated.FontFamily))
                 _vm.Status = $"Font '{updated.FontFamily}' is not installed; a fallback font is shown and exported.";
-            if (isNew) _vm.AddAnnotation(updated);
+            if (isNew) { _vm.AddAnnotation(updated); ApplyAfterDrawing(updated.Id); }
             else _vm.UpdateAnnotation(updated, "Edit text");
         }
         finally

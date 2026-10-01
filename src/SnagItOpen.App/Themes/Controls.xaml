@@ -104,6 +104,10 @@
         <Setter Property="Background" Value="{DynamicResource Bg.Window}" />
         <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
     </Style>
+    <!-- Label does not inherit Foreground (it uses the system text colour), so theme it explicitly. -->
+    <Style TargetType="Label">
+        <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+    </Style>
 
     <!-- Button -->
     <Style TargetType="Button">
@@ -202,6 +206,10 @@
             </ControlTemplate.Triggers>
         </ControlTemplate></Setter.Value></Setter>
     </Style>
+    <!-- Controls inside a ToolBar use these keyed styles instead of the implicit ones (stock = black text and icons). -->
+    <Style x:Key="{x:Static ToolBar.ButtonStyleKey}" TargetType="Button" BasedOn="{StaticResource SubtleButton}" />
+    <Style x:Key="{x:Static ToolBar.ToggleButtonStyleKey}" TargetType="ToggleButton" BasedOn="{StaticResource SubtleToggleButton}" />
+    <Style x:Key="{x:Static ToolBar.RadioButtonStyleKey}" TargetType="RadioButton" BasedOn="{StaticResource SubtleToggleButton}" />
 
     <!-- ToggleButton -->
     <Style TargetType="ToggleButton">

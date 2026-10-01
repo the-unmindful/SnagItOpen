@@ -208,6 +208,29 @@ public sealed class ShellIntegrationTests
     }
 
     [Fact]
+    public void After_drawing_setting_controls_the_tool_and_the_selection()
+    {
+        WithWindow((window, vm) =>
+        {
+            var canvas = Assert.IsType<CanvasView>(window.FindName("Canvas"));
+            var apply = typeof(MainWindow).GetMethod("ApplyAfterDrawing", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            void Draw(AfterDrawBehavior behavior, out Guid id)
+            {
+                vm.Services.Settings = vm.Services.Settings with { AfterDrawing = behavior };
+                canvas.Tool = ToolKind.Rectangle;
+                var r = new RectangleAnnotation { Bounds = new RectD(0, 0, 50, 50) }; vm.AddAnnotation(r); id = r.Id;
+                apply.Invoke(window, [r.Id]);
+            }
+            Draw(AfterDrawBehavior.KeepToolSelectNew, out var a);
+            Assert.Equal(ToolKind.Rectangle, canvas.Tool); Assert.Contains(a, vm.SelectedAnnotations);
+            Draw(AfterDrawBehavior.SelectToolSelectNew, out var b);
+            Assert.Equal(ToolKind.Select, canvas.Tool); Assert.Equal([b], vm.SelectedAnnotations.ToArray());
+            Draw(AfterDrawBehavior.SelectToolSelectNothing, out _);
+            Assert.Equal(ToolKind.Select, canvas.Tool); Assert.Empty(vm.SelectedAnnotations);
+        });
+    }
+
+    [Fact]
     public void Button_icons_are_never_clipped_by_padding_at_any_width()
     {
         WithWindow((window, _) =>

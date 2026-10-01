@@ -33,6 +33,12 @@ internal sealed class PreferencesPages
         general.Note("Start with Windows opens SnagItOpen in the tray when you sign in.");
         general.Check(nameof(initial.ShowCaptureGallery), "Show recent captures strip", initial.ShowCaptureGallery, v => change(s => s with { ShowCaptureGallery = v }));
         general.Check(nameof(initial.SnapEnabled), "Snap images and annotations while moving", initial.SnapEnabled, v => change(s => s with { SnapEnabled = v }));
+        general.Choice(nameof(initial.AfterDrawing), "After drawing an element", initial.AfterDrawing, Enum.GetValues<AfterDrawBehavior>(), v => change(s => s with { AfterDrawing = v }), v => v switch
+        {
+            AfterDrawBehavior.KeepToolSelectNew => "Keep the tool, select the new element (like Affinity)",
+            AfterDrawBehavior.SelectToolSelectNew => "Switch to Select, keep the new element selected",
+            _ => "Switch to Select, select nothing",
+        });
 
         var capture = new SettingsPage("Capture");
         capture.Choice(nameof(initial.CaptureDelaySeconds), "Capture delay", initial.CaptureDelaySeconds, CaptureOptions.AllowedDelays, v => change(s => s with { CaptureDelaySeconds = v }), v => v == 0 ? "No delay" : $"{v} seconds");
