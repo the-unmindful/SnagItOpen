@@ -5,6 +5,31 @@ namespace SnagItOpen.Windows.Tests;
 public class SettingsMigrationTests
 {
     [Fact]
+    public void Version2_adds_defaults_without_overriding_existing_choices()
+    {
+        var old = new AppSettings { Version = 2, CloseToTray = false, CaptureDelaySeconds = 5 }
+            .WithHotkey(HotkeyActions.Region, "Ctrl+Alt+R");
+        var current = old.Sanitize();
+        Assert.Equal(3, current.Version);
+        Assert.False(current.CloseToTray);
+        Assert.Equal(5, current.CaptureDelaySeconds);
+        Assert.Equal("Ctrl+Alt+R", current.GestureFor(HotkeyActions.Region));
+        Assert.Equal(AppTheme.System, current.ThemeMode);
+        Assert.Equal(SelectionAccent.Blue, current.SelectionAccent);
+        Assert.True(current.CaptureOnRelease);
+        Assert.True(current.ShowLoupe);
+        Assert.True(current.DesktopToasts);
+    }
+
+    [Fact]
+    public void Unknown_appearance_enums_fall_back_to_safe_defaults()
+    {
+        var value = new AppSettings { ThemeMode = (AppTheme)999, SelectionAccent = (SelectionAccent)999 }.Sanitize();
+        Assert.Equal(AppTheme.System, value.ThemeMode);
+        Assert.Equal(SelectionAccent.Blue, value.SelectionAccent);
+    }
+
+    [Fact]
     public void Version1_moves_region_to_printscreen_and_enables_close_to_tray()
     {
         var v1 = new AppSettings { Version = 1, CloseToTray = false }.WithHotkey(HotkeyActions.Region, "Ctrl+Shift+1");

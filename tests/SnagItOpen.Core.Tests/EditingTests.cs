@@ -302,6 +302,21 @@ public class AnnotationCanvasTests
     }
 
     [Fact]
+    public void Unlocked_target_size_scales_each_axis_and_preserves_original_pixels()
+    {
+        var doc = DocumentOps.FitCanvas(TestData.FreeDoc(new PixelRect(5, 10, 20, 30)), 0);
+        var line = new LineAnnotation { Start = new PointD(5, 10), End = new PointD(25, 40) };
+        doc = doc with { Annotations = [line] };
+        var scaled = DocumentOps.ScaleDocument(doc, 2, 3);
+        Assert.Equal(new PixelRect(10, 30, 40, 90), scaled.Images[0].Bounds);
+        Assert.Equal(doc.Images[0].SourceCrop, scaled.Images[0].SourceCrop);
+        Assert.Equal(new PointD(10, 30), Assert.IsType<LineAnnotation>(scaled.Annotations[0]).Start);
+        Assert.Equal(new PointD(50, 120), Assert.IsType<LineAnnotation>(scaled.Annotations[0]).End);
+        Assert.Equal(new PixelRect(10, 30, 40, 90), scaled.ExportArea);
+        Assert.Throws<ArgumentOutOfRangeException>(() => DocumentOps.ScaleDocument(doc, 0, 2));
+    }
+
+    [Fact]
     public void Renumber_steps_in_order()
     {
         var d = DocumentState.CreateEmpty();

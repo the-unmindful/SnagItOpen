@@ -315,20 +315,25 @@ public static class DocumentOps
 
     /// <summary>Scales all geometry (images, document annotations, export area) by a factor.</summary>
     public static DocumentState ScaleDocument(DocumentState doc, double factor)
+        => ScaleDocument(doc, factor, factor);
+
+    public static DocumentState ScaleDocument(DocumentState doc, double factorX, double factorY)
     {
-        if (!(factor > 0) || !double.IsFinite(factor)) throw new ArgumentOutOfRangeException(nameof(factor));
+        if (!(factorX > 0) || !double.IsFinite(factorX)) throw new ArgumentOutOfRangeException(nameof(factorX));
+        if (!(factorY > 0) || !double.IsFinite(factorY)) throw new ArgumentOutOfRangeException(nameof(factorY));
+        double factor = Math.Sqrt(factorX * factorY);
         static int R(double v) => (int)Math.Round(v, MidpointRounding.AwayFromZero);
         var images = doc.Images.Select(i =>
         {
             var b = i.Bounds;
-            int x0 = R(b.X * factor), y0 = R(b.Y * factor);
-            int w = Math.Max(1, R(b.Right * factor) - x0), h = Math.Max(1, R(b.Bottom * factor) - y0);
+            int x0 = R(b.X * factorX), y0 = R(b.Y * factorY);
+            int w = Math.Max(1, R(b.Right * factorX) - x0), h = Math.Max(1, R(b.Bottom * factorY) - y0);
             return i with { Bounds = new PixelRect(x0, y0, w, h) };
         }).ToArray();
         doc = AnnotationCanvas.Normalize(doc);
         var anns = doc.Annotations.Select(a =>
         {
-            var s = a.MapGeometry(p => p * factor);
+            var s = a.MapGeometry(p => new PointD(p.X * factorX, p.Y * factorY));
             return s switch
             {
                 TextAnnotation t => t with { FontSize = Math.Max(1, t.FontSize * factor), StrokeWidth = a.StrokeWidth * factor },
@@ -336,8 +341,8 @@ public static class DocumentOps
             };
         }).ToArray();
         var e = doc.ExportArea;
-        int ex = R(e.X * factor), ey = R(e.Y * factor);
-        var area = new PixelRect(ex, ey, Math.Max(1, R(e.Right * factor) - ex), Math.Max(1, R(e.Bottom * factor) - ey));
+        int ex = R(e.X * factorX), ey = R(e.Y * factorY);
+        var area = new PixelRect(ex, ey, Math.Max(1, R(e.Right * factorX) - ex), Math.Max(1, R(e.Bottom * factorY) - ey));
         if (!Limits.IsAcceptableExportSize(area.Width, area.Height))
             throw new LayoutLimitException($"Scaled canvas {area.Width}×{area.Height} exceeds limits.");
         var layout = doc.Layout with

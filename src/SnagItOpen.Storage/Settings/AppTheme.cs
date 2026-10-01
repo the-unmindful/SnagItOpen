@@ -7,3 +7,7 @@ namespace SnagItOpen.Storage.Settings;
 /// </summary>
 [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<AppTheme>))]
 public enum AppTheme { System, Light, Dark }
+
+/// <summary>Selection chrome colour: fixed blue (default, user decision 2026-10-01) or the Windows accent.</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<SelectionAccent>))]
+public enum SelectionAccent { Blue, System }

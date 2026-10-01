@@ -82,6 +82,8 @@ public static class DocumentValidator
             if (!double.IsFinite(a.Alpha) || a.Alpha is < 0 or > 1) errors.Add($"Annotation {a.Id} opacity must be 0–1.");
             switch (a)
             {
+                case RectangleAnnotation rectangle when !Enum.IsDefined(rectangle.Dash):
+                    errors.Add($"Rectangle {a.Id} border pattern invalid."); break;
                 case LineAnnotation ln when !IsFinite(ln.Start) || !IsFinite(ln.End) || (ln.Control is { } cp && !IsFinite(cp))
                                          || !double.IsFinite(ln.HeadSize) || ln.HeadSize is < 0.25 or > 8
                                          || !Enum.IsDefined(ln.StartCap) || !Enum.IsDefined(ln.EndCap) || !Enum.IsDefined(ln.Dash):

@@ -118,17 +118,16 @@ public sealed record ToolStyle
     };
 }
 
-public sealed record ToolStyleFile(int Version, Dictionary<string, ToolStyle> Styles);
+public sealed record ToolStyleFile(int Version, Dictionary<string, ToolStyle> Styles,
+    Dictionary<string, EffectGalleryEntry[]>? EffectGallery = null);
 
-public sealed class ToolStyleStore
+public sealed partial class ToolStyleStore
 {
     private readonly JsonFileStore<ToolStyleFile> _file;
     private Dictionary<string, ToolStyle> _styles = new(StringComparer.Ordinal);
 
     public ToolStyleStore(string path) =>
-        _file = new JsonFileStore<ToolStyleFile>(path, () => new ToolStyleFile(1, new()), f => new ToolStyleFile(1,
-            (f.Styles ?? new()).Where(kv => kv.Value is not null && kv.Key.Length <= 40)
-                .ToDictionary(kv => kv.Key, kv => kv.Value.Sanitize(), StringComparer.Ordinal)));
+        _file = new JsonFileStore<ToolStyleFile>(path, () => new ToolStyleFile(1, new()), SanitizeFile);
 
     public string? LastWarning { get; private set; }
 
@@ -137,6 +136,7 @@ public sealed class ToolStyleStore
         var r = _file.Load();
         LastWarning = r.Warning;
         _styles = new Dictionary<string, ToolStyle>(r.Value.Styles, StringComparer.Ordinal);
+        _effectGallery = r.Value.EffectGallery ?? new(StringComparer.Ordinal);
     }
 
     public ToolStyle Get(string tool, ToolStyle? fallback = null) =>
@@ -145,7 +145,7 @@ public sealed class ToolStyleStore
     public void Set(string tool, ToolStyle style)
     {
         _styles[tool] = style.Sanitize();
-        try { _file.Save(new ToolStyleFile(1, _styles)); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        PersistStyles();
     }
 }
 
@@ -215,6 +215,15 @@ public sealed class CapturePresetStore
             throw new ArgumentException("Preset names must be unique.");
         _file.Save(new CapturePresetFile(1, list.ToArray()));
         Presets = list;
+    }
+
+    /// <summary>Reorders an editable copy; persistence remains an explicit Save operation.</summary>
+    public static CapturePreset[] Reorder(IReadOnlyList<CapturePreset> presets, int from, int to)
+    {
+        if (from < 0 || from >= presets.Count || to < 0 || to >= presets.Count) throw new ArgumentOutOfRangeException(nameof(to));
+        var result = presets.ToList();
+        var item = result[from]; result.RemoveAt(from); result.Insert(to, item);
+        return result.ToArray();
     }
 
     /// <summary>Resolves a unique, non-overwriting output file name.</summary>

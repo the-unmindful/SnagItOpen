@@ -2,9 +2,11 @@ using SnagItOpen.Core.Geometry;
 
 namespace SnagItOpen.Core.Capture;
 
-public enum SelectionPhase { Idle, Dragging, Done, Canceled }
+public enum SelectionPhase { Idle, Dragging, Adjusting, Done, Canceled }
 
-public enum SelectionKey { Escape, Enter, Backspace }
+public enum SelectionKey { Escape, Enter, Backspace, Left, Right, Up, Down, Tab }
+
+public enum SelectionHandle { None, Move, TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left }
 
 /// <summary>
 /// Pointer/keyboard state machine for interactive capture selection, entirely in physical desktop
@@ -20,10 +22,12 @@ public sealed class RegionSelection
     private readonly IReadOnlyList<PixelRect> _windows;
     private PixelPoint _anchor;
     private bool _moved;
+    private PixelRect _adjustOriginal;
+    private SelectionHandle _adjustHandle;
 
     public RegionSelection(PixelRect desktop, CaptureShape shape = CaptureShape.Rectangle,
         SelectionConstraint? constraint = null, bool multiRegion = false,
-        IReadOnlyList<PixelRect>? windows = null, bool windowsOnly = false)
+        IReadOnlyList<PixelRect>? windows = null, bool windowsOnly = false, bool captureOnRelease = true)
     {
         if (desktop.IsEmpty) throw new ArgumentOutOfRangeException(nameof(desktop));
         Desktop = desktop;
@@ -32,13 +36,17 @@ public sealed class RegionSelection
         MultiRegion = multiRegion;
         _windows = windows ?? [];
         WindowsOnly = windowsOnly;
+        CaptureOnRelease = captureOnRelease;
     }
 
     public PixelRect Desktop { get; }
-    public CaptureShape Shape { get; }
-    public SelectionConstraint Constraint { get; }
-    public bool MultiRegion { get; }
-    public bool WindowsOnly { get; }
+    public CaptureShape Shape { get; private set; }
+    public SelectionConstraint Constraint { get; private set; }
+    public bool MultiRegion { get; private set; }
+    public bool WindowsOnly { get; private set; }
+    public bool CaptureOnRelease { get; }
+    public SelectionHandle ActiveEdge { get; private set; } = SelectionHandle.Right;
+    public bool IsMovingBody => Phase == SelectionPhase.Adjusting && _adjustHandle == SelectionHandle.Move;
     public SelectionPhase Phase { get; private set; }
     public PixelPoint Cursor { get; private set; }
 
@@ -65,7 +73,12 @@ public sealed class RegionSelection
     {
         if (IsFinished) return;
         Cursor = Clamp(p);
-        if (Phase == SelectionPhase.Dragging)
+        if (Phase == SelectionPhase.Adjusting)
+        {
+            if (_adjustHandle != SelectionHandle.None)
+                Current = Resize(_adjustOriginal, _adjustHandle, Cursor.X - _anchor.X, Cursor.Y - _anchor.Y);
+        }
+        else if (Phase == SelectionPhase.Dragging)
         {
             if (Cursor != _anchor) _moved = true;
             if (Shape == CaptureShape.Freehand) AddPathPoint(Cursor);
@@ -83,6 +96,12 @@ public sealed class RegionSelection
     {
         if (IsFinished) return;
         Cursor = Clamp(p);
+        if (Phase == SelectionPhase.Adjusting)
+        {
+            var handle = HitTestHandle(Cursor, 6);
+            if (handle != SelectionHandle.None) { BeginAdjust(handle, Cursor); return; }
+            ResetIdle();
+        }
         if (Constraint.FixedSize is { IsEmpty: false })
         {
             // Fixed size commits on press; no drag needed.
@@ -100,6 +119,13 @@ public sealed class RegionSelection
 
     public void Up(PixelPoint p)
     {
+        if (Phase == SelectionPhase.Adjusting)
+        {
+            Move(p);
+            _adjustHandle = SelectionHandle.None;
+            Changed?.Invoke();
+            return;
+        }
         if (Phase != SelectionPhase.Dragging) return;
         Move(p);
         Phase = SelectionPhase.Idle;
@@ -117,16 +143,27 @@ public sealed class RegionSelection
         else pick = Current;
 
         Current = null;
-        if (pick is { IsEmpty: false } r) Commit(r);
+        if (pick is { IsEmpty: false } r)
+        {
+            if (!CaptureOnRelease && !MultiRegion && !WindowsOnly && _moved && Shape != CaptureShape.Freehand)
+            {
+                Current = r;
+                Hover = null;
+                Phase = SelectionPhase.Adjusting;
+                Changed?.Invoke();
+            }
+            else Commit(r);
+        }
         else Changed?.Invoke();
     }
 
-    public void Key(SelectionKey key)
+    public void Key(SelectionKey key, bool shift = false, bool control = false)
     {
         if (IsFinished) return;
         switch (key)
         {
             case SelectionKey.Escape:
+                if (Phase == SelectionPhase.Adjusting) { ResetIdle(); break; }
                 Phase = SelectionPhase.Canceled;
                 _committed.Clear();
                 Current = null;
@@ -136,13 +173,34 @@ public sealed class RegionSelection
                 else if (_committed.Count > 0) _committed.RemoveAt(_committed.Count - 1);
                 break;
             case SelectionKey.Enter:
-                if (Phase == SelectionPhase.Dragging) { Up(Cursor); if (IsFinished) return; }
+                if (Phase == SelectionPhase.Adjusting && Current is { } adjusted) { Commit(adjusted); return; }
+                if (Phase == SelectionPhase.Dragging)
+                {
+                    Up(Cursor);
+                    if (IsFinished) return;
+                    if (Phase == SelectionPhase.Adjusting && Current is { } entered) { Commit(entered); return; }
+                }
                 if (MultiRegion)
                 {
                     if (_committed.Count > 0) Phase = SelectionPhase.Done;
                 }
                 else if (Hover is { } h) { Commit(h); return; }
                 else if (FixedRect(Cursor) is { } f) { Commit(f); return; }
+                break;
+            case SelectionKey.Tab:
+                if (Phase == SelectionPhase.Adjusting)
+                    ActiveEdge = ActiveEdge switch { SelectionHandle.Right => SelectionHandle.Bottom,
+                        SelectionHandle.Bottom => SelectionHandle.Left, SelectionHandle.Left => SelectionHandle.Top, _ => SelectionHandle.Right };
+                break;
+            case SelectionKey.Left or SelectionKey.Right or SelectionKey.Up or SelectionKey.Down:
+                if (Phase != SelectionPhase.Adjusting || Current is not { } rect) break;
+                int step = shift && !control ? 10 : 1;
+                int dx = key == SelectionKey.Left ? -step : key == SelectionKey.Right ? step : 0;
+                int dy = key == SelectionKey.Up ? -step : key == SelectionKey.Down ? step : 0;
+                var handle = control ? dx != 0 ? shift ? SelectionHandle.Left : SelectionHandle.Right
+                    : shift ? SelectionHandle.Top : SelectionHandle.Bottom : SelectionHandle.Move;
+                if (control) ActiveEdge = handle;
+                Current = Resize(rect, handle, dx, dy);
                 break;
         }
         Changed?.Invoke();
@@ -159,6 +217,92 @@ public sealed class RegionSelection
     }
 
     public bool IsFinished => Phase is SelectionPhase.Done or SelectionPhase.Canceled;
+
+    public void Configure(CaptureShape shape, SelectionConstraint? constraint = null, bool multiRegion = false, bool windowsOnly = false)
+    {
+        if (IsFinished) return;
+        Shape = shape;
+        Constraint = constraint ?? SelectionConstraint.None;
+        MultiRegion = multiRegion;
+        WindowsOnly = windowsOnly;
+        _committed.Clear();
+        ResetIdle();
+        Move(Cursor);
+    }
+
+    public void Confirm(PixelRect rectangle)
+    {
+        if (!IsFinished) Commit(rectangle);
+    }
+
+    public void BeginAdjust(SelectionHandle handle, PixelPoint point)
+    {
+        if (Phase != SelectionPhase.Adjusting || Current is not { } r || handle == SelectionHandle.None) return;
+        _adjustOriginal = r;
+        _adjustHandle = handle;
+        _anchor = Clamp(point);
+        Changed?.Invoke();
+    }
+
+    public SelectionHandle HitTestHandle(PixelPoint point, int radius)
+    {
+        if (Phase != SelectionPhase.Adjusting || Current is not { } r) return SelectionHandle.None;
+        foreach (var (handle, p) in Handles(r))
+            if (Math.Abs(point.X - p.X) <= radius && Math.Abs(point.Y - p.Y) <= radius) return handle;
+        return r.Contains(point.X, point.Y) ? SelectionHandle.Move : SelectionHandle.None;
+    }
+
+    public static IEnumerable<(SelectionHandle Handle, PixelPoint Point)> Handles(PixelRect r)
+    {
+        int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+        yield return (SelectionHandle.TopLeft, new(r.X, r.Y));
+        yield return (SelectionHandle.TopRight, new(r.Right, r.Y));
+        yield return (SelectionHandle.BottomRight, new(r.Right, r.Bottom));
+        yield return (SelectionHandle.BottomLeft, new(r.X, r.Bottom));
+        yield return (SelectionHandle.Top, new(cx, r.Y));
+        yield return (SelectionHandle.Right, new(r.Right, cy));
+        yield return (SelectionHandle.Bottom, new(cx, r.Bottom));
+        yield return (SelectionHandle.Left, new(r.X, cy));
+    }
+
+    private void ResetIdle()
+    {
+        Phase = SelectionPhase.Idle;
+        Current = null;
+        Hover = null;
+        _adjustHandle = SelectionHandle.None;
+        _path.Clear();
+        ResultPolygon = [];
+    }
+
+    private PixelRect Resize(PixelRect r, SelectionHandle handle, int dx, int dy)
+    {
+        if (handle == SelectionHandle.Move)
+            return new PixelRect(Math.Clamp(r.X + dx, Desktop.X, Desktop.Right - r.Width),
+                Math.Clamp(r.Y + dy, Desktop.Y, Desktop.Bottom - r.Height), r.Width, r.Height);
+        bool left = handle is SelectionHandle.Left or SelectionHandle.TopLeft or SelectionHandle.BottomLeft;
+        bool right = handle is SelectionHandle.Right or SelectionHandle.TopRight or SelectionHandle.BottomRight;
+        bool top = handle is SelectionHandle.Top or SelectionHandle.TopLeft or SelectionHandle.TopRight;
+        bool bottom = handle is SelectionHandle.Bottom or SelectionHandle.BottomLeft or SelectionHandle.BottomRight;
+        int l = left ? Math.Clamp(r.X + dx, Desktop.X, r.Right - 1) : r.X;
+        int rr = right ? Math.Clamp(r.Right + dx, r.X + 1, Desktop.Right) : r.Right;
+        int t = top ? Math.Clamp(r.Y + dy, Desktop.Y, r.Bottom - 1) : r.Y;
+        int b = bottom ? Math.Clamp(r.Bottom + dy, r.Y + 1, Desktop.Bottom) : r.Bottom;
+        if (Constraint.AspectRatio is not { } ar || ar <= 0 || !double.IsFinite(ar))
+            return PixelRect.FromEdges(l, t, rr, b);
+        double w = rr - l, h = b - t;
+        bool widthDrives = (left || right) && (!(top || bottom) || Math.Abs(dx) >= Math.Abs(dy) * ar);
+        if (widthDrives) h = w / ar; else w = h * ar;
+        double ax = left ? r.Right : right ? r.X : r.X + r.Width / 2.0;
+        double ay = top ? r.Bottom : bottom ? r.Y : r.Y + r.Height / 2.0;
+        double maxW = left ? ax - Desktop.X : right ? Desktop.Right - ax : 2 * Math.Min(ax - Desktop.X, Desktop.Right - ax);
+        double maxH = top ? ay - Desktop.Y : bottom ? Desktop.Bottom - ay : 2 * Math.Min(ay - Desktop.Y, Desktop.Bottom - ay);
+        double fit = Math.Min(1, Math.Min(maxW / w, maxH / h));
+        int iw = Math.Max(1, (int)Math.Round(w * fit)), ih = Math.Max(1, (int)Math.Round(h * fit));
+        int ix = (int)Math.Round(left ? ax - iw : right ? ax : ax - iw / 2.0);
+        int iy = (int)Math.Round(top ? ay - ih : bottom ? ay : ay - ih / 2.0);
+        return new PixelRect(Math.Clamp(ix, Desktop.X, Desktop.Right - iw), Math.Clamp(iy, Desktop.Y, Desktop.Bottom - ih), iw, ih);
+    }
 
     private void Commit(PixelRect r)
     {

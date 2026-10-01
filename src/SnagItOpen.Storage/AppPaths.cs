@@ -17,6 +17,7 @@ public sealed class AppPaths
 
     public string Root { get; }
     public string Settings => Path.Combine(Root, "settings.json");
+    public string UiState => Path.Combine(Root, "ui-state.json");
     public string Presets => Path.Combine(Root, "presets.json");
     public string ToolStyles => Path.Combine(Root, "toolstyles.json");
     public string AnnotationStyles => Path.Combine(Root, "annotation-styles.json");

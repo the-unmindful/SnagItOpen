@@ -80,6 +80,7 @@ public sealed record RectangleAnnotation : Annotation
 {
     public Rgba32? Fill { get; init; }
     public double CornerRadius { get; init; }
+    public LineDash Dash { get; init; }
     public override string Kind => "Rectangle";
     public override bool CanRotate => true;
 }

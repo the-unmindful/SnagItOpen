@@ -25,8 +25,20 @@ public enum OutsideCanvasMode { Dim, Show, Hide }
 /// <summary>Persisted user preferences (settings.json).</summary>
 public sealed record AppSettings
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     public int Version { get; init; } = CurrentVersion;
+    /// <summary>Colour theme: follow Windows, or force Light/Dark. High contrast always wins (v3).</summary>
+    public AppTheme ThemeMode { get; init; } = AppTheme.System;
+    /// <summary>Selection colour: fixed blue (default, user decision) or the Windows accent (v3).</summary>
+    public SelectionAccent SelectionAccent { get; init; } = SelectionAccent.Blue;
+    /// <summary>Region capture commits when the mouse is released (default, user decision); off = Adjust phase with action bar (v3).</summary>
+    public bool CaptureOnRelease { get; init; } = true;
+    /// <summary>Show the pixel loupe in the capture overlay (v3).</summary>
+    public bool ShowLoupe { get; init; } = true;
+    public PixelSize? LastCaptureCustomSize { get; init; }
+    public double? LastCaptureCustomAspect { get; init; }
+    /// <summary>After a capture while the editor is hidden, show a desktop toast (v3).</summary>
+    public bool DesktopToasts { get; init; } = true;
     public int CaptureDelaySeconds { get; init; }
     public bool IncludeCursor { get; init; }
     public CaptureDestination DefaultDestination { get; init; } = CaptureDestination.AppendBelow;
@@ -75,15 +87,21 @@ public sealed record AppSettings
     /// <summary>
     /// Version 1 → 2: region capture moves to PrintScreen (only if it was still the old default) and
     /// closing the editor keeps the app in the tray.
+    /// Version 2 → 3: additive only. The new fields are absent from older files, so the property
+    /// initialisers already supply their defaults; nothing existing changes.
     /// </summary>
     private AppSettings Migrate()
     {
         if (Version >= CurrentVersion) return this;
-        var s = this with { Version = CurrentVersion, CloseToTray = true, Hotkeys = Hotkeys ?? DefaultHotkeys() };
-        if (string.Equals(s.GestureFor(HotkeyActions.Region), "Ctrl+Shift+1", StringComparison.OrdinalIgnoreCase)
-            && !(s.Hotkeys ?? []).Any(h => h is not null && string.Equals(h.Gesture, "PrintScreen", StringComparison.OrdinalIgnoreCase)))
-            s = s.WithHotkey(HotkeyActions.Region, "PrintScreen");
-        return s;
+        var s = this with { Hotkeys = Hotkeys ?? DefaultHotkeys() };
+        if (Version < 2)
+        {
+            s = s with { CloseToTray = true };
+            if (string.Equals(s.GestureFor(HotkeyActions.Region), "Ctrl+Shift+1", StringComparison.OrdinalIgnoreCase)
+                && !(s.Hotkeys ?? []).Any(h => h is not null && string.Equals(h.Gesture, "PrintScreen", StringComparison.OrdinalIgnoreCase)))
+                s = s.WithHotkey(HotkeyActions.Region, "PrintScreen");
+        }
+        return s with { Version = CurrentVersion };
     }
 
     private AppSettings SanitizeCore()
@@ -107,6 +125,11 @@ public sealed record AppSettings
             DefaultDestination = Enum.IsDefined(DefaultDestination) ? DefaultDestination : CaptureDestination.AppendBelow,
             JpegQuality = Math.Clamp(JpegQuality, 1, 100),
             OutsideCanvas = Enum.IsDefined(OutsideCanvas) ? OutsideCanvas : OutsideCanvasMode.Dim,
+            ThemeMode = Enum.IsDefined(ThemeMode) ? ThemeMode : AppTheme.System,
+            SelectionAccent = Enum.IsDefined(SelectionAccent) ? SelectionAccent : SelectionAccent.Blue,
+            LastCaptureCustomSize = LastCaptureCustomSize is { Width: > 0, Height: > 0 } size
+                && size.Width <= Limits.MaxDimension && size.Height <= Limits.MaxDimension ? size : null,
+            LastCaptureCustomAspect = LastCaptureCustomAspect is { } aspect && double.IsFinite(aspect) && aspect > 0 ? aspect : null,
             HistoryMaxCount = Math.Clamp(HistoryMaxCount, 1, 10_000),
             HistoryMaxMegabytes = Math.Clamp(HistoryMaxMegabytes, 10, 100_000),
             DefaultLayout = layout,

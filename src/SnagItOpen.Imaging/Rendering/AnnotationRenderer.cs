@@ -76,7 +76,7 @@ public static class AnnotationRenderer
         switch (a)
         {
             case RectangleAnnotation r:
-                dc.DrawRoundedRectangle(r.Fill is { } rf ? Brush(rf) : null, r.StrokeWidth > 0 ? Pen(r.Color, r.StrokeWidth) : null,
+                dc.DrawRoundedRectangle(r.Fill is { } rf ? Brush(rf) : null, r.StrokeWidth > 0 ? LinePen(r.Color, r.StrokeWidth, r.Dash) : null,
                     r.Bounds.ToRect(), r.CornerRadius, r.CornerRadius);
                 break;
             case EllipseAnnotation e:
