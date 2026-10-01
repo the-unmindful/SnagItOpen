@@ -45,6 +45,8 @@ public abstract record Annotation
     public bool Hidden { get; init; }
     /// <summary>Optional user label shown in the Objects list.</summary>
     public string? Name { get; init; }
+    /// <summary>Annotations sharing a GroupId select, move and delete together (F-GRP). Null = not grouped.</summary>
+    public Guid? GroupId { get; init; }
 
     /// <summary>Tool name shown in UI; also the key for remembered tool styles.</summary>
     [JsonIgnore] public abstract string Kind { get; }

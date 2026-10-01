@@ -248,10 +248,11 @@ public sealed class EditorViewModel : ObservableObject
 
     // ------------------------------------------------------------------ selection
 
-    public void Select(IEnumerable<Guid> images, IEnumerable<Guid>? annotations = null)
+    /// <param name="expandGroups">Selecting one member of a group selects the whole group, unless false (drill-in).</param>
+    public void Select(IEnumerable<Guid> images, IEnumerable<Guid>? annotations = null, bool expandGroups = true)
     {
         _selectedImages = images.ToHashSet();
-        _selectedAnnotations = (annotations ?? []).ToHashSet();
+        _selectedAnnotations = (expandGroups ? DocumentOps.ExpandGroups(Document, annotations ?? []) : annotations ?? []).ToHashSet();
         // Numeric geometry, crop and annotation fields all depend on the selection.
         OnAllPropertiesChanged();
         SelectionChanged?.Invoke();
@@ -261,6 +262,31 @@ public sealed class EditorViewModel : ObservableObject
 
 
     public void ClearSelection() => Select([], []);
+
+    public bool CanGroup => _selectedAnnotations.Count > 1;
+    public bool CanUngroup => Document.Annotations.Any(a => a.GroupId is not null && _selectedAnnotations.Contains(a.Id));
+
+    public void GroupSelection()
+    {
+        if (!CanGroup) { Status = "Select two or more annotations to group them."; return; }
+        int n = _selectedAnnotations.Count; var ids = _selectedAnnotations.ToArray();
+        if (Commit("Group", d => DocumentOps.Group(d, ids).Doc))
+        {
+            Select([], ids);
+            Status = $"Grouped {n} annotations. Click a member again to select it alone; Ctrl+Shift+G ungroups.";
+        }
+    }
+
+    public void UngroupSelection()
+    {
+        if (!CanUngroup) { Status = "The selection contains no group."; return; }
+        Guid[] members = [];
+        if (Commit("Ungroup", d => { var (nd, m) = DocumentOps.Ungroup(d, _selectedAnnotations); members = m; return nd; }))
+        {
+            Select([], members, expandGroups: false);
+            Status = $"Ungrouped {members.Length} annotations.";
+        }
+    }
 
     public void SelectAll() => Select(Document.Images.Where(i => i.Visible).Select(i => i.Id), Document.Annotations.Select(a => a.Id));
 

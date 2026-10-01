@@ -30,6 +30,8 @@
                 <Separator />
                 <MenuItem Header="_Paste image" InputGestureText="Ctrl+V" Click="OnPaste" />
                 <MenuItem Header="_Duplicate" InputGestureText="Ctrl+D" Click="OnDuplicate" />
+                <MenuItem Header="_Group" InputGestureText="Ctrl+G" Click="OnGroup" />
+                <MenuItem Header="_Ungroup" InputGestureText="Ctrl+Shift+G" Click="OnUngroup" />
                 <MenuItem Header="De_lete" InputGestureText="Del" Click="OnDelete" />
                 <MenuItem Header="Select _all" InputGestureText="Ctrl+A" Click="OnSelectAll" />
                 <Separator />

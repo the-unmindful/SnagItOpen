@@ -537,6 +537,8 @@ public partial class MainWindow : Window
             case Key.V when ctrl && ClipboardHasAnnotations() && _vm.PasteAnnotations(): break;
             case Key.V when ctrl: OnPaste(this, e); break;
             case Key.D when ctrl && _vm.SelectedAnnotations.Count > 0 && _vm.SelectedImages.Count == 0: _vm.DuplicateAnnotations(); break;
+            case Key.G when ctrl && shift: _vm.UngroupSelection(); break;
+            case Key.G when ctrl: _vm.GroupSelection(); break;
             case Key.OemPlus or Key.Add when !ctrl && _vm.SelectedAnnotations.Count > 0: _vm.AdjustStepNumbers(1); break;
             case Key.OemMinus or Key.Subtract when !ctrl && _vm.SelectedAnnotations.Count > 0: _vm.AdjustStepNumbers(-1); break;
             case Key.Tab when !ctrl && Canvas.IsKeyboardFocusWithin && _vm.HasSelection: CycleAnnotation(shift ? -1 : 1); break;
@@ -631,6 +633,8 @@ public partial class MainWindow : Window
         Item("Copy", CopyAnnotationsToClipboard, anns, "Ctrl+C");
         Item("Paste", () => _vm.PasteAnnotations(), _vm.HasAnnotationClipboard, "Ctrl+V");
         Item("Duplicate", _vm.DuplicateAnnotations, anns, "Ctrl+D");
+        Item("Group", _vm.GroupSelection, _vm.CanGroup, "Ctrl+G");
+        Item("Ungroup", _vm.UngroupSelection, _vm.CanUngroup, "Ctrl+Shift+G");
         Item("Delete", _vm.RemoveSelected, anns || _vm.SelectedImages.Count > 0, "Del");
         menu.Items.Add(new Separator());
         Item("Copy style", _vm.CopyStyle, primary is not null);
@@ -993,6 +997,8 @@ public partial class MainWindow : Window
     private void OnUndo(object sender, RoutedEventArgs e) => _vm.Undo();
     private void OnRedo(object sender, RoutedEventArgs e) => _vm.Redo();
     private void OnDuplicate(object sender, RoutedEventArgs e) => _vm.Duplicate();
+    private void OnGroup(object sender, RoutedEventArgs e) => _vm.GroupSelection();
+    private void OnUngroup(object sender, RoutedEventArgs e) => _vm.UngroupSelection();
     private void OnDelete(object sender, RoutedEventArgs e) => _vm.RemoveSelected();
     private void OnSelectAll(object sender, RoutedEventArgs e) => _vm.SelectAll();
     private void OnRotateLeft(object sender, RoutedEventArgs e) => _vm.Rotate(-1);

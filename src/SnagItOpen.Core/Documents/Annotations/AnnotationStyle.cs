@@ -23,7 +23,7 @@ public static class AnnotationStyle
         // Start from the style and put back what belongs to the target.
         var s = style with
         {
-            Id = target.Id, ImageLayerId = null, Bounds = target.Bounds, Rotation = target.Rotation, Locked = target.Locked,
+            Id = target.Id, ImageLayerId = null, Bounds = target.Bounds, Rotation = target.Rotation, Locked = target.Locked, GroupId = target.GroupId,
         };
         return (s, target) switch
         {

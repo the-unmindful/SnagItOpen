@@ -148,14 +148,52 @@ public static class DocumentOps
         doc = AnnotationCanvas.Normalize(doc);
         var anns = doc.Annotations.ToList();
         var created = new List<Guid>();
+        var groups = NewGroupIds(doc.Annotations.Where(a => ids.Contains(a.Id)));
         foreach (var a in doc.Annotations.Where(a => ids.Contains(a.Id)))
         {
-            // Copies are never locked or hidden, so the user can immediately work with them.
-            var c = a.Translate(dx, dy) with { Id = Guid.NewGuid(), Locked = false, Hidden = false };
+            // Copies are never locked or hidden, so the user can immediately work with them. Copied groups become new groups.
+            var c = a.Translate(dx, dy) with { Id = Guid.NewGuid(), Locked = false, Hidden = false, GroupId = a.GroupId is { } g ? groups[g] : null };
             anns.Add(c);
             created.Add(c.Id);
         }
         return (Reflow(doc with { Annotations = anns.ToArray() }), created.ToArray());
+    }
+
+    private static Dictionary<Guid, Guid> NewGroupIds(IEnumerable<Annotation> source) =>
+        source.Where(a => a.GroupId is not null).Select(a => a.GroupId!.Value).Distinct().ToDictionary(g => g, _ => Guid.NewGuid());
+
+    // ---------------------------------------------------------------- grouping (F-GRP)
+
+    /// <summary>Puts 2+ annotations in one new group (leaving any old groups) and makes them contiguous in z-order at the topmost member's place.</summary>
+    public static (DocumentState Doc, Guid GroupId) Group(DocumentState doc, IReadOnlyCollection<Guid> ids)
+    {
+        var members = doc.Annotations.Where(a => ids.Contains(a.Id)).ToList();
+        if (members.Count < 2) throw new InvalidOperationException("Select two or more annotations to group.");
+        var group = Guid.NewGuid();
+        var list = doc.Annotations.ToList();
+        int top = list.FindLastIndex(a => ids.Contains(a.Id));
+        var block = members.Select(a => a with { GroupId = group }).ToList();
+        var rest = list.Where(a => !ids.Contains(a.Id)).ToList();
+        int insertAt = list.Take(top + 1).Count(a => !ids.Contains(a.Id));
+        rest.InsertRange(insertAt, block);
+        return (Reflow(doc with { Annotations = rest.ToArray() }), group);
+    }
+
+    /// <summary>Dissolves every group that has a member in <paramref name="ids"/>. Returns all former members.</summary>
+    public static (DocumentState Doc, Guid[] Members) Ungroup(DocumentState doc, IReadOnlyCollection<Guid> ids)
+    {
+        var groups = doc.Annotations.Where(a => ids.Contains(a.Id) && a.GroupId is not null).Select(a => a.GroupId!.Value).ToHashSet();
+        var members = doc.Annotations.Where(a => a.GroupId is { } g && groups.Contains(g)).Select(a => a.Id).ToArray();
+        return (doc with { Annotations = doc.Annotations.Select(a => a.GroupId is { } g && groups.Contains(g) ? a with { GroupId = null } : a).ToArray() }, members);
+    }
+
+    /// <summary>The given ids plus every annotation that shares a group with one of them.</summary>
+    public static Guid[] ExpandGroups(DocumentState doc, IEnumerable<Guid> ids)
+    {
+        var set = ids.ToHashSet();
+        var groups = doc.Annotations.Where(a => set.Contains(a.Id) && a.GroupId is not null).Select(a => a.GroupId!.Value).ToHashSet();
+        if (groups.Count == 0) return set.ToArray();
+        return set.Concat(doc.Annotations.Where(a => a.GroupId is { } g && groups.Contains(g)).Select(a => a.Id)).Distinct().ToArray();
     }
 
     // ---------------------------------------------------------------- ordering
@@ -464,8 +502,9 @@ public static class DocumentOps
     /// <summary>Pastes copies of annotations (new IDs, offset). Returns the new IDs.</summary>
     public static (DocumentState Doc, Guid[] NewIds) PasteAnnotations(DocumentState doc, IReadOnlyList<Annotation> items, double dx, double dy)
     {
+        var groups = NewGroupIds(items.Where(a => a is not null));
         var copies = items.Where(a => a is not null)
-            .Select(a => a.Translate(dx, dy) with { Id = Guid.NewGuid(), ImageLayerId = null, Locked = false })
+            .Select(a => a.Translate(dx, dy) with { Id = Guid.NewGuid(), ImageLayerId = null, Locked = false, GroupId = a.GroupId is { } g ? groups[g] : null })
             // Pasted stamps that reference an asset this document lacks become plain symbol stamps.
             .Select(a => a is StampAnnotation { AssetId: { } sid } st && doc.FindAsset(sid) is null ? st with { AssetId = null } : a)
             .ToArray();

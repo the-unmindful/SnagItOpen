@@ -137,7 +137,7 @@ public sealed class AnnotationStyleStore
         var next = update(entries[index]); if (next == entries[index]) return false; entries[index] = next; _gallery[kind] = entries; Persist(); return true;
     }
 
-    private static Annotation Strip(Annotation a) => a with { Id = Guid.Empty, ImageLayerId = null, Locked = false, Hidden = false, Name = null, Rotation = 0 };
+    private static Annotation Strip(Annotation a) => a with { Id = Guid.Empty, ImageLayerId = null, Locked = false, Hidden = false, Name = null, Rotation = 0, GroupId = null };
 
     private void Persist()
     {

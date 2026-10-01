@@ -415,6 +415,14 @@ public sealed class CanvasView : FrameworkElement
             }
             if (a.Locked) DrawLockBadge(dc, ToView(AnnotationDocBounds(doc, a)));
         }
+        // A fully selected group gets one solid frame around all its members.
+        foreach (var gid in doc.Annotations.Where(a => a.GroupId is not null && _vm.SelectedAnnotations.Contains(a.Id)).Select(a => a.GroupId!.Value).Distinct())
+        {
+            var members = doc.Annotations.Where(a => a.GroupId == gid).ToList();
+            if (members.Count < 2 || !members.All(m => _vm.SelectedAnnotations.Contains(m.Id))) continue;
+            var frame = members.Select(m => ToView(AnnotationDocBounds(doc, m))).Aggregate(Rect.Union);
+            frame.Inflate(4, 4); dc.DrawRectangle(null, SelectionPen, frame);
+        }
 
         foreach (var g in _guides)
         {
@@ -776,6 +784,7 @@ public sealed class CanvasView : FrameworkElement
 
     // Ctrl/Shift+click on an already-selected item removes it, but only if the press did not become a drag.
     private (Guid Id, bool IsImage)? _deferToggle;
+    private Guid? _deferDrill; // click (no drag) on a member of a fully selected group selects just that member
     private Guid[] _dupAnnIds = [], _dupImgIds = [];
 
     private void BeginSelect(DocumentState doc, Point p)
@@ -847,6 +856,7 @@ public sealed class CanvasView : FrameworkElement
                 else vm.Select(vm.SelectedImages, vm.SelectedAnnotations.Append(ann.Id));
             }
             else if (!vm.SelectedAnnotations.Contains(ann.Id)) vm.Select([], [ann.Id]);
+            else if (ann.GroupId is not null && vm.SelectedAnnotations.Count > 1) _deferDrill = ann.Id;
             _drag = ann.Locked ? Drag.None : Drag.Move;
             if (ann.Locked) Cursor = Cursors.No;
         }
@@ -914,7 +924,7 @@ public sealed class CanvasView : FrameworkElement
                 {
                     double dx = _curDoc.X - _downDoc.X, dy = _curDoc.Y - _downDoc.Y;
                     if (Math.Abs(p.X - _downView.X) < 2 && Math.Abs(p.Y - _downView.Y) < 2) return;
-                    _deferToggle = null; // it is a drag now, not a click
+                    _deferToggle = null; _deferDrill = null; // it is a drag now, not a click
                     (dx, dy) = Snap(baseDoc, dx, dy, alt);
                     int ix = (int)Math.Round(dx), iy = (int)Math.Round(dy);
                     if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
@@ -1162,10 +1172,11 @@ public sealed class CanvasView : FrameworkElement
             case Drag.Move:
                 if (_deferToggle is { } dt)
                 {
-                    // Ctrl/Shift+click (no drag) on a selected item: remove it from the selection.
-                    if (dt.IsImage) _vm.Select(_vm.SelectedImages.Where(i => i != dt.Id), _vm.SelectedAnnotations);
-                    else _vm.Select(_vm.SelectedImages, _vm.SelectedAnnotations.Where(i => i != dt.Id));
+                    // Ctrl/Shift+click (no drag) on a selected item: remove it (and its group) from the selection.
+                    if (dt.IsImage) _vm.Select(_vm.SelectedImages.Where(i => i != dt.Id), _vm.SelectedAnnotations, expandGroups: false);
+                    else { var drop = DocumentOps.ExpandGroups(_vm.Document, [dt.Id]); _vm.Select(_vm.SelectedImages, _vm.SelectedAnnotations.Except(drop), expandGroups: false); }
                 }
+                else if (_deferDrill is { } drill) _vm.Select([], [drill], expandGroups: false);
                 else if (preview is not null && (_dupAnnIds.Length > 0 || _dupImgIds.Length > 0))
                 {
                     var (ai, ii) = (_dupAnnIds, _dupImgIds);
@@ -1177,7 +1188,7 @@ public sealed class CanvasView : FrameworkElement
                     }
                 }
                 else if (preview is not null) _vm.Commit("Move", _ => preview);
-                _deferToggle = null; _dupAnnIds = []; _dupImgIds = [];
+                _deferToggle = null; _deferDrill = null; _dupAnnIds = []; _dupImgIds = [];
                 Cursor = null;
                 break;
             case Drag.Resize:
