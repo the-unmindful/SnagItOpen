@@ -128,7 +128,13 @@
  <Grid x:Name="WorkspaceGrid">
   <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition x:Name="ListColumn" Width="220" MinWidth="0" />
    <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" MinWidth="320" /><ColumnDefinition Width="Auto" /><ColumnDefinition x:Name="PropsColumn" Width="300" MinWidth="0" /></Grid.ColumnDefinitions>
-  <ScrollViewer x:Name="RailScroll" Grid.Column="0" Width="48" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden" Background="{DynamicResource Bg.Window}"><StackPanel x:Name="ToolRail" Margin="6" KeyboardNavigation.TabNavigation="Once" /></ScrollViewer>
+  <Grid Grid.Column="0" Width="48">
+   <ScrollViewer x:Name="RailScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden" Background="{DynamicResource Bg.Window}"><StackPanel x:Name="ToolRail" Margin="6" KeyboardNavigation.TabNavigation="Once" /></ScrollViewer>
+   <!-- V23: fades out the last visible tools when more are below (scroll with the wheel). -->
+   <Border x:Name="RailFade" Height="28" VerticalAlignment="Bottom" IsHitTestVisible="False" Background="{DynamicResource Bg.Window}" Visibility="Collapsed">
+    <Border.OpacityMask><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="Transparent" Offset="0" /><GradientStop Color="Black" Offset="0.85" /></LinearGradientBrush></Border.OpacityMask>
+   </Border>
+  </Grid>
             <TabControl x:Name="LeftTabs" Grid.Column="1" Margin="4" Padding="0">
             <TabItem Header="Images">
             <DockPanel Margin="2">

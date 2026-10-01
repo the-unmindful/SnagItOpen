@@ -66,16 +66,30 @@ public sealed class InspectorPanel : UserControl
         var layoutContent = new StackPanel(); layout.Content = layoutContent;
         AddNumber(layoutContent, "Gap (px)", nameof(vm.Gap), 0, Limits.MaxGap);
         AddNumber(layoutContent, "Padding (px)", nameof(vm.Padding), 0, Limits.MaxPadding);
-        var alignment = new ComboBox { ItemsSource = Enum.GetValues<CrossAlignment>() };
-        alignment.SetBinding(ComboBox.SelectedItemProperty, new Binding(nameof(vm.Alignment)) { Mode = BindingMode.TwoWay });
-        AddRow(layoutContent, "Alignment", alignment);
+        // V18: alignment as three icons that follow the layout direction.
+        var alignment = new SegmentedControl();
+        void AlignmentOptions()
+        {
+            bool vertical = vm.Mode != LayoutMode.Horizontal;
+            alignment.SetOptions([
+                new SegmentOption(CrossAlignment.Start, vertical ? "Align left" : "Align top", Application.Current?.TryFindResource(vertical ? "Icon.AlignLeft" : "Icon.AlignTop") as Geometry),
+                new SegmentOption(CrossAlignment.Center, vertical ? "Align centre" : "Align middle", Application.Current?.TryFindResource(vertical ? "Icon.AlignCenterX" : "Icon.AlignMiddle") as Geometry),
+                new SegmentOption(CrossAlignment.End, vertical ? "Align right" : "Align bottom", Application.Current?.TryFindResource(vertical ? "Icon.AlignRight" : "Icon.AlignBottom") as Geometry)]);
+            StyleSegments(alignment.Buttons);
+        }
+        AlignmentOptions();
+        vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(vm.Mode)) AlignmentOptions(); };
+        alignment.SetBinding(SegmentedControl.SelectedValueProperty, new Binding(nameof(vm.Alignment)) { Mode = BindingMode.TwoWay });
+        AddRow(layoutContent, "Alignment", Track(alignment));
         AddCheck(layoutContent, "Match width / height", nameof(vm.MatchSize));
         AddNumber(layoutContent, "Target size", nameof(vm.TargetSize), 0, Limits.MaxDimension, "Width (vertical) or height (horizontal) to scale every image to. 0 = the largest image.");
         AddCheck(layoutContent, "Allow enlarging smaller images", nameof(vm.AllowUpscale));
         layout.SetBinding(IsEnabledProperty, new Binding(nameof(vm.IsAutoLayout)));
 
         _canvas = Section(_document, "Canvas"); var canvas = new StackPanel(); _canvas.Content = canvas;
-        var mode = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 8) }; mode.Children.Add(_auto); mode.Children.Add(_locked); canvas.Children.Add(mode);
+        var mode = new StackPanel { Orientation = Orientation.Horizontal }; mode.Children.Add(_auto); mode.Children.Add(_locked);
+        StyleSegments([_auto, _locked]); _auto.ToolTip = "The canvas grows and shrinks with the content"; _locked.ToolTip = "Fixed canvas size; content outside is not exported";
+        AddRow(canvas, "Canvas size", Track(mode));
         _auto.Click += (_, _) => { if (!_sync) vm.FitCanvas(); };
         _locked.Click += (_, _) => { if (!_sync) vm.SetCanvas(vm.Document.ExportArea); };
         _width = new NumberBox { Label = "Width (px)", Minimum = 1, Maximum = Limits.MaxDimension };
@@ -95,7 +109,7 @@ public sealed class InspectorPanel : UserControl
         _outside.SelectionChanged += (_, _) => { if (!_sync && _outside.SelectedItem is OutsideCanvasMode value) { services.SaveSettings(services.Settings with { OutsideCanvas = value }); OutsideChanged?.Invoke(value); } };
         AddRow(canvas, "Outside canvas", _outside);
         AddCheck(canvas, "Transparent background", nameof(vm.TransparentBackground));
-        var color = new ColorSwatchButton();
+        var color = new ColorSwatchButton { HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 132 };
         color.SetBinding(ColorSwatchButton.ValueProperty, new Binding("BackgroundColor") { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.Explicit });
         color.Committed += _ => color.GetBindingExpression(ColorSwatchButton.ValueProperty)?.UpdateSource();
         AddRow(canvas, "Background", color);
@@ -186,6 +200,17 @@ public sealed class InspectorPanel : UserControl
     {
         var box = new CheckBox { Content = label, Margin = new Thickness(0, 4, 0, 4) }; box.SetBinding(CheckBox.IsCheckedProperty, new Binding(property) { Mode = BindingMode.TwoWay }); panel.Children.Add(box);
     }
+    /// <summary>Quiet pill track for segmented choices (same look as the command bar layout switch).</summary>
+    private static Border Track(UIElement child)
+    {
+        var track = new Border { Child = child, CornerRadius = new CornerRadius(6), Padding = new Thickness(2), HorizontalAlignment = HorizontalAlignment.Left };
+        track.SetResourceReference(Border.BackgroundProperty, "Bg.SurfaceAlt"); return track;
+    }
+    private static void StyleSegments(IEnumerable<System.Windows.Controls.Primitives.ToggleButton> buttons)
+    {
+        foreach (var b in buttons) { b.SetResourceReference(StyleProperty, "SubtleToggleButton"); b.MinWidth = 32; b.MinHeight = 26; b.Margin = new Thickness(0); b.Padding = new Thickness(6, 0, 6, 0); }
+    }
+
     private static void AddRow(Panel panel, string label, FrameworkElement control)
     {
         AutomationProperties.SetName(control, label);
@@ -198,6 +223,6 @@ public sealed class InspectorPanel : UserControl
     {
         var button = new IconButton { Label = label, Icon = Application.Current?.TryFindResource(icon) as Geometry, ShowLabel = false }; button.Click += (_, _) => run(); panel.Children.Add(button); return button;
     }
-    private static void AddButton(Panel panel, string label, Action run) { var b = new Button { Content = label, Margin = new Thickness(0, 4, 0, 4) }; b.Click += (_, _) => run(); panel.Children.Add(b); }
+    private static void AddButton(Panel panel, string label, Action run) { var b = new Button { Content = label, Margin = new Thickness(88, 4, 0, 4), HorizontalAlignment = HorizontalAlignment.Left }; b.Click += (_, _) => run(); panel.Children.Add(b); }
     private static void AddMenu(ContextMenu menu, string label, Action action) { var item = new MenuItem { Header = label }; item.Click += (_, _) => action(); menu.Items.Add(item); }
 }

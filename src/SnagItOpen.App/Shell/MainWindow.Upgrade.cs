@@ -151,17 +151,32 @@ public partial class MainWindow
 
     private void BuildCommandBar()
     {
+        RailScroll.ScrollChanged += (_, _) => RailFade.Visibility = RailScroll.VerticalOffset < RailScroll.ScrollableHeight - 1 ? Visibility.Visible : Visibility.Collapsed;
         _captureButton = new SplitButton { Label = "Capture", Icon = TryFindResource("Icon.Capture") as Geometry, Shortcut = RegionGesture() };
         _captureButton.Click += OnCaptureRegion; CommandBar.Children.Add(_captureButton);
         CommandButton("Import", "Icon.Import", "Ctrl+O", OnImport);
         CommandButton("Paste", "Icon.Paste", "Ctrl+V", OnPaste);
         Divider();
-        foreach (var (name, icon, run) in new (string, string, RoutedEventHandler)[]
-        { ("Vertical", "Icon.Vertical", OnVertical), ("Horizontal", "Icon.Horizontal", OnHorizontal), ("Free", "Icon.Free", OnFree) }) CommandButton(name, icon, "", run);
+        // Layout mode: one segmented control that shows the current mode (V15), in a quiet pill track.
+        var modes = new SegmentedControl([
+            new SegmentOption(LayoutMode.Vertical, "Vertical layout", TryFindResource("Icon.Vertical") as Geometry),
+            new SegmentOption(LayoutMode.Horizontal, "Horizontal layout", TryFindResource("Icon.Horizontal") as Geometry),
+            new SegmentOption(LayoutMode.Free, "Free layout", TryFindResource("Icon.Free") as Geometry)]);
+        foreach (var segment in modes.Buttons) { segment.SetResourceReference(StyleProperty, "SubtleToggleButton"); segment.Padding = new Thickness(6, 0, 6, 0); segment.MinHeight = 28; segment.MinWidth = 32; segment.Margin = new Thickness(0); }
+        System.Windows.Automation.AutomationProperties.SetName(modes, "Layout mode");
+        modes.SetBinding(SegmentedControl.SelectedValueProperty, new System.Windows.Data.Binding(nameof(EditorViewModel.Mode)) { Mode = System.Windows.Data.BindingMode.OneWay });
+        modes.SelectionChanged += value =>
+        {
+            if (value is not LayoutMode mode || mode == _vm.Mode) return;
+            (mode switch { LayoutMode.Vertical => (RoutedEventHandler)OnVertical, LayoutMode.Horizontal => OnHorizontal, _ => OnFree })(this, new RoutedEventArgs());
+        };
+        var track = new Border { Child = modes, CornerRadius = new CornerRadius(6), Padding = new Thickness(2), Margin = new Thickness(2, 0, 2, 0), VerticalAlignment = VerticalAlignment.Center };
+        track.SetResourceReference(Border.BackgroundProperty, "Bg.SurfaceAlt");
+        CommandBar.Children.Add(track);
         Divider();
         CommandButton("Undo", "Icon.Undo", "Ctrl+Z", OnUndo);
         CommandButton("Redo", "Icon.Redo", "Ctrl+Y", OnRedo);
-        CommandButton("Properties", "Icon.Settings", "F4", OnToggleProperties);
+        CommandButton("Properties", "Icon.Panel", "F4", OnToggleProperties);
         Divider();
         var drag = CommandButton("Drag out", "Icon.DragOut", "Enter", (_, _) => { });
         drag.PreviewMouseLeftButtonDown += OnDragOutDown; drag.PreviewMouseMove += OnDragOutMove; drag.KeyDown += OnDragOutKey;
