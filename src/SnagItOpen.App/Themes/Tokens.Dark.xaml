@@ -16,6 +16,7 @@
     <SolidColorBrush x:Key="Text.Secondary" Color="#BDBDBD" />
     <SolidColorBrush x:Key="Text.Disabled" Color="#6E6E6E" />
     <SolidColorBrush x:Key="Text.OnAccent" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="Text.Selected" Color="#F2F2F2" />
     <SolidColorBrush x:Key="Accent.Brand" Color="#E0474E" />
     <SolidColorBrush x:Key="Accent.BrandHover" Color="#F0666C" />
     <SolidColorBrush x:Key="Accent.Select" Color="#4CC2FF" />

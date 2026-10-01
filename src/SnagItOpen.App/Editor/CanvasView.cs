@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -10,6 +11,7 @@ using SnagItOpen.Core.Layout;
 using SnagItOpen.Imaging.Effects;
 using SnagItOpen.Imaging.Rendering;
 using SnagItOpen.Storage.Settings;
+using SnagItOpen.App.Infrastructure;
 
 namespace SnagItOpen.App.Editor;
 
@@ -29,15 +31,22 @@ public enum ToolKind
 public sealed class CanvasView : FrameworkElement
 {
     private const double HandleSize = 8;
-    private static readonly Pen SelectionPen = Frozen(new Pen(new SolidColorBrush(Color.FromRgb(0, 120, 215)), 1.5));
-    private static readonly Pen AnnSelectionPen = Frozen(new Pen(new SolidColorBrush(Color.FromRgb(0, 120, 215)), 1) { DashStyle = DashStyles.Dash });
-    private static readonly Pen ExportPen = Frozen(new Pen(new SolidColorBrush(Color.FromArgb(160, 90, 90, 90)), 1) { DashStyle = DashStyles.Dash });
-    private static readonly Pen GuidePen = Frozen(new Pen(new SolidColorBrush(Color.FromRgb(255, 0, 170)), 1));
-    private static readonly Pen DraftPen = Frozen(new Pen(new SolidColorBrush(Color.FromRgb(0, 120, 215)), 1.5) { DashStyle = DashStyles.Dash });
-    private static readonly Brush HandleFill = Frozen(new SolidColorBrush(Colors.White));
-    private static readonly Brush CropShade = Frozen(new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)));
-    private static readonly Brush Backdrop = Frozen(new SolidColorBrush(Color.FromRgb(0xE6, 0xE6, 0xE6)));
-    private static readonly Brush Checker = CreateChecker();
+    private Pen SelectionPen = null!, AnnSelectionPen = null!, ExportPen = null!, GuidePen = null!, DraftPen = null!;
+    private Pen LockedCanvasPen = null!, HoverPen = null!, FocusPen = null!, LockPen = null!;
+    private Brush HandleFill = null!, SpecialFill = null!, CropShade = null!, Backdrop = null!, Checker = null!;
+    private Brush OutsideShade = null!, LabelBack = null!, LabelText = null!, GuideText = null!, SheetShadow = null!;
+    private Geometry _lockGeometry = Geometry.Empty;
+    private readonly DrawingVisual _documentLayer = new();
+    private readonly DrawingVisual _adornerLayer = new();
+    private ThemeService? _theme;
+    private bool _documentDirty = true;
+    private DocumentState? _renderedDocument;
+    private ViewportTransform _renderedView;
+    private Size _renderedSize;
+    private Guid? _renderedEditing;
+    private OutsideCanvasMode _renderedOutside;
+    private bool _keyboardFocus, _pointerFocusing;
+    private static readonly Lazy<Cursor> RotateCursor = new(LoadRotateCursor);
 
     private EditorViewModel? _vm;
     private ViewportTransform _view = ViewportTransform.Identity;
@@ -45,24 +54,15 @@ public sealed class CanvasView : FrameworkElement
 
     // gesture state
     private enum Drag { None, Pan, Move, Resize, AnnHandle, Marquee, Draw, Freehand, Crop, CanvasEdge, CanvasMove }
-    private static readonly Pen LockedCanvasPen = Frozen(new Pen(new SolidColorBrush(Color.FromRgb(0, 120, 215)), 1.5) { DashStyle = DashStyles.Dot });
-    private static readonly Brush OutsideShade = Frozen(new SolidColorBrush(Color.FromArgb(150, 230, 230, 230)));
-    private static readonly Brush CanvasHandleFill = Frozen(new SolidColorBrush(Color.FromRgb(210, 232, 250)));
     private PixelRect _canvasStart;
 
     /// <summary>How content outside a locked canvas is shown in the editor (never exported).</summary>
     public OutsideCanvasMode Outside
     {
         get => _outside;
-        set { _outside = value; InvalidateVisual(); }
+        set { if (_outside == value) return; _outside = value; InvalidateVisual(); }
     }
     private OutsideCanvasMode _outside = OutsideCanvasMode.Dim;
-    private const double RotateDistanceDips = 26;
-    private static readonly Pen HoverPen = Frozen(new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 120, 215)), 1));
-    private static readonly Brush RotateFill = Frozen(new SolidColorBrush(Color.FromRgb(0, 120, 215)));
-    private static readonly Brush TailFill = Frozen(new SolidColorBrush(Color.FromRgb(255, 200, 0)));
-    private static readonly Brush BendFill = Frozen(new SolidColorBrush(Color.FromRgb(120, 220, 120)));
-    private static readonly Brush LabelBack = Frozen(new SolidColorBrush(Color.FromArgb(210, 30, 30, 30)));
     private Drag _drag;
     private Point _downView;
     private PointD _downDoc;
@@ -77,6 +77,8 @@ public sealed class CanvasView : FrameworkElement
     private Guid? _drawLayer;
     private readonly List<PointD> _freehand = [];
     private SnapLine[] _guides = [];
+    private SpacingDistance[] _distances = [];
+    private EqualSpacing[] _spacing = [];
     private (double X, double Y) _panStart;
     private bool _spaceDown;
 
@@ -86,9 +88,38 @@ public sealed class CanvasView : FrameworkElement
         FocusVisualStyle = null;
         ClipToBounds = true;
         AllowDrop = true;
+        AddVisualChild(_documentLayer);
+        AddVisualChild(_adornerLayer);
+        RenderOptions.SetBitmapScalingMode(_documentLayer, BitmapScalingMode.HighQuality);
+        RebuildThemeResources();
+        Loaded += (_, _) =>
+        {
+            _theme = ThemeService.Current;
+            if (_theme is not null) _theme.ThemeChanged += OnThemeChanged;
+            RebuildThemeResources();
+            _documentDirty = true;
+            InvalidateVisual();
+        };
+        Unloaded += (_, _) => { if (_theme is not null) _theme.ThemeChanged -= OnThemeChanged; _theme = null; };
         RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.HighQuality);
         System.Windows.Automation.AutomationProperties.SetName(this, "Canvas. Arrow keys nudge the selection, Delete removes it.");
     }
+
+    protected override int VisualChildrenCount => 2;
+    protected override Visual GetVisualChild(int index) => index switch
+    {
+        0 => _documentLayer, 1 => _adornerLayer, _ => throw new ArgumentOutOfRangeException(nameof(index)),
+    };
+
+    /// <summary>Number of shared scene render calls. Hover and selection must leave this unchanged.</summary>
+    public int DocumentRenderCount { get; private set; }
+
+    /// <summary>Requests a hover/selection/draft redraw without discarding the document visual.</summary>
+    public void RefreshAdorners() => InvalidateVisual();
+
+    /// <summary>The shell shows an actionable InfoBar when all editable content is hidden.</summary>
+    public bool IsAllContentHidden => _vm is { IsEmpty: false } && !_vm.Displayed.Images.Any(i => i.Visible)
+        && !_vm.Displayed.Annotations.Any(a => !a.Hidden || a is RedactionAnnotation);
 
     public EditorViewModel? ViewModel
     {
@@ -99,11 +130,13 @@ public sealed class CanvasView : FrameworkElement
             _vm = value;
             if (_vm is not null) _vm.CanvasInvalidated += OnInvalidated;
             _fitPending = true;
+            _documentDirty = true;
             InvalidateVisual();
         }
     }
 
-    public ToolKind Tool { get; set; } = ToolKind.Select;
+    public ToolKind Tool { get => _tool; set { if (_tool == value) return; _tool = value; RefreshAdorners(); } }
+    private ToolKind _tool = ToolKind.Select;
 
     /// <summary>Current style for newly drawn annotations (provided by the tool panel).</summary>
     public Func<ToolKind, ToolStyle>? StyleProvider { get; set; }
@@ -128,11 +161,50 @@ public sealed class CanvasView : FrameworkElement
 
     private static T Frozen<T>(T f) where T : Freezable { f.Freeze(); return f; }
 
-    private static Brush CreateChecker()
+    private Brush Token(string key, Brush fallback, double opacity = 1)
+    {
+        var brush = (TryFindResource(key) as Brush ?? fallback).CloneCurrentValue();
+        brush.Opacity *= opacity;
+        return Frozen(brush);
+    }
+
+    private void OnThemeChanged(object? sender, EventArgs e)
+    {
+        RebuildThemeResources();
+        _documentDirty = true;
+        InvalidateVisual();
+    }
+
+    private void RebuildThemeResources()
+    {
+        Brush accent = Token("Accent.Select", SystemColors.HighlightBrush);
+        SelectionPen = Frozen(new Pen(accent, 1.5));
+        AnnSelectionPen = Frozen(new Pen(accent, 1) { DashStyle = DashStyles.Dash });
+        ExportPen = Frozen(new Pen(accent, 1) { DashStyle = DashStyles.Dash });
+        LockedCanvasPen = Frozen(new Pen(accent, 1.5) { DashStyle = DashStyles.Dot });
+        DraftPen = Frozen(new Pen(accent, 1.5) { DashStyle = DashStyles.Dash });
+        HoverPen = Frozen(new Pen(Token("Accent.Select", SystemColors.HighlightBrush, 0.65), 1));
+        GuidePen = Frozen(new Pen(Token("Accent.Guide", SystemColors.HighlightBrush), 1));
+        FocusPen = Frozen(new Pen(Token("Stroke.Focus", SystemColors.WindowTextBrush), 2));
+        HandleFill = Token("Handle.Fill", SystemColors.HighlightTextBrush);
+        SpecialFill = Token("Handle.Special", SystemColors.HighlightBrush);
+        Backdrop = Token("Bg.Canvas", SystemColors.ControlBrush);
+        CropShade = Token("Overlay.Dim", SystemColors.WindowTextBrush, 0.65);
+        OutsideShade = Token("Bg.Canvas", SystemColors.ControlBrush, 0.65);
+        LabelBack = Token("Bg.Surface", SystemColors.WindowBrush, 0.9);
+        LabelText = Token("Text.Primary", SystemColors.WindowTextBrush);
+        GuideText = Token("Text.OnAccent", SystemColors.HighlightTextBrush);
+        LockPen = Frozen(new Pen(LabelText, 1.5));
+        SheetShadow = Token("Overlay.Dim", SystemColors.WindowTextBrush, 0.2);
+        Checker = CreateChecker();
+        _lockGeometry = TryFindResource("Icon.Lock") is Geometry g ? Frozen(g.CloneCurrentValue()) : Geometry.Empty;
+    }
+
+    private Brush CreateChecker()
     {
         var g = new DrawingGroup();
-        g.Children.Add(new GeometryDrawing(Brushes.White, null, new RectangleGeometry(new Rect(0, 0, 16, 16))));
-        var dark = new SolidColorBrush(Color.FromRgb(0xD9, 0xD9, 0xD9));
+        g.Children.Add(new GeometryDrawing(Token("Checker.A", SystemColors.WindowBrush), null, new RectangleGeometry(new Rect(0, 0, 16, 16))));
+        var dark = Token("Checker.B", SystemColors.ControlBrush);
         g.Children.Add(new GeometryDrawing(dark, null, new RectangleGeometry(new Rect(0, 0, 8, 8))));
         g.Children.Add(new GeometryDrawing(dark, null, new RectangleGeometry(new Rect(8, 8, 8, 8))));
         var b = new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 16, 16), ViewportUnits = BrushMappingMode.Absolute };
@@ -161,6 +233,28 @@ public sealed class CanvasView : FrameworkElement
     }
 
     public void ZoomBy(double factor) => ZoomTo(_view.Zoom * factor);
+
+    /// <summary>Fits the current selected image/annotation bounds and centres them in the viewport.</summary>
+    public void ZoomToSelection()
+    {
+        if (_vm is null || !TrySelectionBounds(_vm.Displayed, out var area)) return;
+        _view = ViewportTransform.Fit(area, ActualWidth, ActualHeight, maxZoom: ViewportTransform.MaxZoom);
+        _fitPending = false;
+        AfterViewChange();
+    }
+
+    /// <summary>Fits the export sheet and visible content horizontally, retaining a 24 DIP margin.</summary>
+    public void FitWidth()
+    {
+        if (_vm is null || ActualWidth <= 48 || ActualHeight <= 0) return;
+        var doc = _vm.Displayed;
+        var area = doc.ExportArea.ToRectD().Union(DocumentBounds.ContentBounds(doc));
+        double zoom = Math.Clamp((ActualWidth - 48) / Math.Max(1, area.Width), ViewportTransform.MinZoom, ViewportTransform.MaxZoom);
+        _view = new(zoom, (ActualWidth - area.Width * zoom) / 2 - area.X * zoom,
+            (ActualHeight - area.Height * zoom) / 2 - area.Y * zoom);
+        _fitPending = false;
+        AfterViewChange();
+    }
 
     /// <summary>Converts a point in this element's coordinates to document pixels.</summary>
     public PointD ToDocumentPoint(Point viewPoint) => ToDoc(viewPoint);
@@ -204,19 +298,45 @@ public sealed class CanvasView : FrameworkElement
 
     protected override void OnRender(DrawingContext dc)
     {
-        dc.DrawRectangle(Backdrop, null, new Rect(0, 0, ActualWidth, ActualHeight));
-        if (_vm is null) return;
-        var doc = _vm.Displayed;
-        if (_fitPending && doc.HasVisibleContent && ActualWidth > 0) { FitToView(); return; }
+        // A transparent hit surface keeps the entire viewport interactive; the two child visuals retain their drawings.
+        dc.DrawRectangle(Brushes.Transparent, null, new Rect(RenderSize));
+        if (_fitPending && _vm?.Displayed.HasVisibleContent == true && ActualWidth > 0) FitToView();
+        var doc = _vm?.Displayed;
+        if (_documentDirty || !ReferenceEquals(doc, _renderedDocument) || _view != _renderedView
+            || RenderSize != _renderedSize || EditingAnnotation != _renderedEditing || Outside != _renderedOutside)
+        {
+            using var documentContext = _documentLayer.RenderOpen();
+            DrawDocument(documentContext, doc);
+            _renderedDocument = doc;
+            _renderedView = _view;
+            _renderedSize = RenderSize;
+            _renderedEditing = EditingAnnotation;
+            _renderedOutside = Outside;
+            _documentDirty = false;
+        }
+        using var adorners = _adornerLayer.RenderOpen();
+        if (doc is not null) DrawAdorners(adorners, doc);
+        if (_keyboardFocus && IsKeyboardFocused && ActualWidth > 2 && ActualHeight > 2)
+            adorners.DrawRectangle(null, FocusPen, new Rect(1, 1, ActualWidth - 2, ActualHeight - 2));
+    }
 
+    private void DrawDocument(DrawingContext dc, DocumentState? doc)
+    {
+        dc.DrawRectangle(Backdrop, null, new Rect(0, 0, ActualWidth, ActualHeight));
+        if (doc is null || _vm is null) return;
         var export = ToView(doc.ExportArea.ToRectD());
+        dc.DrawRoundedRectangle(SheetShadow, null, new Rect(export.X - 1, export.Y + 2, export.Width + 2, export.Height + 2), 2, 2);
         if (doc.Background.A < 255) dc.DrawRectangle(Checker, null, export);
 
         bool locked = !doc.AutoCanvas;
         bool hideOutside = locked && Outside == OutsideCanvasMode.Hide;
         if (hideOutside) dc.PushClip(new RectangleGeometry(export));
         dc.PushTransform(new MatrixTransform(_view.Zoom, 0, 0, _view.Zoom, _view.PanX, _view.PanY));
-        try { _vm.Services.Renderer.Draw(dc, doc, EditingAnnotation is { } eid ? new RenderSettings { HiddenAnnotations = new HashSet<Guid> { eid } } : null); }
+        try
+        {
+            DocumentRenderCount++;
+            _vm.Services.Renderer.Draw(dc, doc, EditingAnnotation is { } eid ? new RenderSettings { HiddenAnnotations = new HashSet<Guid> { eid } } : null);
+        }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or OutOfMemoryException) { }
         dc.Pop();
         if (hideOutside) dc.Pop();
@@ -229,15 +349,15 @@ public sealed class CanvasView : FrameworkElement
             shade.Children.Add(new RectangleGeometry(export));
             dc.DrawGeometry(OutsideShade, null, shade);
         }
-        dc.DrawRectangle(null, locked ? LockedCanvasPen : ExportPen, export);
-        if (locked && Tool == ToolKind.Select && _drag is Drag.None or Drag.CanvasEdge) DrawHandles(dc, export, CanvasHandleFill);
+    }
 
-        // Empty state: a truly empty document shows the start card (MainWindow.xaml) instead of drawn text.
-        if (!doc.HasVisibleContent)
-        {
-            if (!_vm.IsEmpty) DrawCenteredText(dc, "Everything on the canvas is hidden. Use the Objects list to show it.", 15);
-            return;
-        }
+    private void DrawAdorners(DrawingContext dc, DocumentState doc)
+    {
+        if (_vm is null) return;
+        var export = ToView(doc.ExportArea.ToRectD());
+        bool locked = !doc.AutoCanvas;
+        dc.DrawRectangle(null, locked ? LockedCanvasPen : ExportPen, export);
+        if (locked && Tool == ToolKind.Select && _drag is Drag.None or Drag.CanvasEdge) DrawHandles(dc, export, HandleFill);
 
         // Selection adorners
         foreach (var id in _vm.SelectedImages)
@@ -246,6 +366,13 @@ public sealed class CanvasView : FrameworkElement
             var r = ToView(l.Bounds.ToRectD());
             dc.DrawRectangle(null, SelectionPen, r);
             if (_vm.SelectedImages.Count == 1 && _vm.SelectedAnnotations.Count == 0 && Tool == ToolKind.Select) DrawHandles(dc, r);
+        }
+
+        foreach (var distance in _distances) DrawSpacingMarker(dc, distance, label: true);
+        foreach (var equal in _spacing)
+        {
+            DrawSpacingMarker(dc, equal.Moving, label: false);
+            DrawSpacingMarker(dc, equal.Reference, label: true);
         }
         if (_hover is { } hid && !_vm.SelectedAnnotations.Contains(hid) && _drag == Drag.None && doc.FindAnnotation(hid) is { } ha)
             DrawOutline(dc, ha, HoverPen);
@@ -271,22 +398,15 @@ public sealed class CanvasView : FrameworkElement
     private void DrawSizeLabelText(DrawingContext dc, string text, Point at)
     {
         var ft = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"), 11, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            new Typeface("Segoe UI"), 11, LabelText, VisualTreeHelper.GetDpi(this).PixelsPerDip);
         var p = new Point(at.X + 14, at.Y + 14);
         dc.DrawRoundedRectangle(LabelBack, null, new Rect(p.X, p.Y, ft.Width + 8, ft.Height + 4), 3, 3);
         dc.DrawText(ft, new Point(p.X + 4, p.Y + 2));
     }
 
-    private void DrawCenteredText(DrawingContext dc, string text, double size)
-    {
-        var ft = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface(SystemFonts.MessageFontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
-            size, SystemColors.GrayTextBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-        dc.DrawText(ft, new Point((ActualWidth - ft.Width) / 2, (ActualHeight - ft.Height) / 2));
-    }
+    private void DrawHandles(DrawingContext dc, Rect r) => DrawHandles(dc, r, HandleFill);
 
-    private static void DrawHandles(DrawingContext dc, Rect r) => DrawHandles(dc, r, HandleFill);
-
-    private static void DrawHandles(DrawingContext dc, Rect r, Brush fill)
+    private void DrawHandles(DrawingContext dc, Rect r, Brush fill)
     {
         foreach (var h in Enum.GetValues<ResizeHandle>())
         {
@@ -361,9 +481,9 @@ public sealed class CanvasView : FrameworkElement
     private void DrawSizeLabel(DrawingContext dc, Rect view, RectD docRect)
     {
         var ft = new FormattedText($"{Math.Round(docRect.Width)} × {Math.Round(docRect.Height)}", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"), 11, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            new Typeface("Segoe UI"), 11, LabelText, VisualTreeHelper.GetDpi(this).PixelsPerDip);
         var at = new Point(view.X, Math.Max(0, view.Y - ft.Height - 6));
-        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(200, 30, 30, 30)), null, new Rect(at.X, at.Y, ft.Width + 8, ft.Height + 4), 3, 3);
+        dc.DrawRoundedRectangle(LabelBack, null, new Rect(at.X, at.Y, ft.Width + 8, ft.Height + 4), 3, 3);
         dc.DrawText(ft, new Point(at.X + 4, at.Y + 2));
     }
 
@@ -424,25 +544,85 @@ public sealed class CanvasView : FrameworkElement
                     dc.DrawRectangle(HandleFill, SelectionPen, new Rect(p.X - HandleSize / 2, p.Y - HandleSize / 2, HandleSize, HandleSize));
                     break;
                 case HandleKind.Rotate:
-                    dc.DrawEllipse(RotateFill, SelectionPen, p, HandleSize / 2 + 1, HandleSize / 2 + 1);
+                    dc.DrawEllipse(HandleFill, SelectionPen, p, 5, 5);
+                    DrawRotateGlyph(dc, p);
                     break;
                 case HandleKind.Start or HandleKind.End:
                     dc.DrawEllipse(HandleFill, SelectionPen, p, HandleSize / 2 + 1, HandleSize / 2 + 1);
                     break;
                 case HandleKind.Bend:
-                    dc.DrawRectangle(BendFill, SelectionPen, new Rect(p.X - HandleSize / 2 + 1, p.Y - HandleSize / 2 + 1, HandleSize - 2, HandleSize - 2));
+                    dc.DrawGeometry(SpecialFill, SelectionPen, Polygon([new(p.X, p.Y - 5), new(p.X + 5, p.Y), new(p.X, p.Y + 5), new(p.X - 5, p.Y)]));
                     break;
                 case HandleKind.Tail:
-                    dc.DrawEllipse(TailFill, SelectionPen, p, HandleSize / 2 + 1, HandleSize / 2 + 1);
+                    dc.DrawGeometry(SpecialFill, SelectionPen, Polygon([new(p.X, p.Y - 5), new(p.X + 5, p.Y + 4), new(p.X - 5, p.Y + 4)]));
                     break;
             }
         }
     }
 
-    private static void DrawLockBadge(DrawingContext dc, Rect r)
+    private static StreamGeometry Polygon(Point[] points)
     {
-        var ft = new FormattedText("🔒", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Emoji"), 11, Brushes.Black, 1.0);
-        dc.DrawText(ft, new Point(r.Right + 2, r.Y - ft.Height));
+        var geometry = new StreamGeometry();
+        using (var c = geometry.Open())
+        {
+            c.BeginFigure(points[0], true, true);
+            c.PolyLineTo(points.Skip(1).ToArray(), true, false);
+        }
+        return Frozen(geometry);
+    }
+
+    private void DrawRotateGlyph(DrawingContext dc, Point p)
+    {
+        var arc = new StreamGeometry();
+        using (var c = arc.Open())
+        {
+            c.BeginFigure(new Point(p.X - 2, p.Y + 1), false, false);
+            c.ArcTo(new Point(p.X + 2, p.Y - 1), new Size(2.5, 2.5), 0, true, SweepDirection.Clockwise, true, false);
+            c.LineTo(new Point(p.X + 2, p.Y + 1), true, false);
+            c.LineTo(new Point(p.X, p.Y), true, false);
+        }
+        dc.DrawGeometry(null, SelectionPen, Frozen(arc));
+    }
+
+    private void DrawLockBadge(DrawingContext dc, Rect r)
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        double x = Math.Round((r.Right + 3) * dpi.DpiScaleX) / dpi.DpiScaleX;
+        double y = Math.Round((r.Y - 18) * dpi.DpiScaleY) / dpi.DpiScaleY;
+        dc.DrawRoundedRectangle(LabelBack, null, new Rect(x, y, 20, 20), 3, 3);
+        dc.PushTransform(new TranslateTransform(x + 2, y + 2));
+        dc.DrawGeometry(null, LockPen, _lockGeometry);
+        dc.Pop();
+    }
+
+    private void DrawSpacingMarker(DrawingContext dc, SpacingDistance gap, bool label)
+    {
+        var a = ToView(gap.Start); var b = ToView(gap.End);
+        dc.DrawLine(GuidePen, a, b);
+        var cross = gap.Horizontal ? new Vector(0, 4) : new Vector(4, 0);
+        dc.DrawLine(GuidePen, a - cross, a + cross);
+        dc.DrawLine(GuidePen, b - cross, b + cross);
+        if (!label) return;
+        var ft = new FormattedText($"{gap.Pixels:0.#} px", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            new Typeface("Segoe UI"), 11, GuideText, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        var at = new Point((a.X + b.X - ft.Width) / 2 - 4, (a.Y + b.Y - ft.Height) / 2 - 2);
+        dc.DrawRoundedRectangle(GuidePen.Brush, null, new Rect(at.X, at.Y, ft.Width + 8, ft.Height + 4), 3, 3);
+        dc.DrawText(ft, new Point(at.X + 4, at.Y + 2));
+    }
+
+    private static Cursor LoadRotateCursor()
+    {
+        try
+        {
+            var resource = Application.GetResourceStream(new Uri("pack://application:,,,/SnagItOpen;component/Assets/Cursors/rotate.cur"));
+            if (resource is not null)
+            {
+                using var stream = resource.Stream;
+                return new Cursor(stream, true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException or NotSupportedException) { }
+        return Cursors.Cross;
     }
 
     private ResizeHandle? HitHandle(Rect viewRect, Point p)
@@ -472,7 +652,10 @@ public sealed class CanvasView : FrameworkElement
 
     protected override void OnMouseDown(MouseButtonEventArgs e)
     {
-        Focus();
+        _keyboardFocus = false;
+        _pointerFocusing = true;
+        try { Focus(); } finally { _pointerFocusing = false; }
+        RefreshAdorners();
         if (_vm is null) return;
         var p = e.GetPosition(this);
         _downView = p;
@@ -521,6 +704,7 @@ public sealed class CanvasView : FrameworkElement
                 _drag = Drag.Draw;
                 break;
         }
+        if (_drag == Drag.None) { e.Handled = true; return; }
         CaptureMouse();
         e.Handled = true;
     }
@@ -576,7 +760,8 @@ public sealed class CanvasView : FrameworkElement
             for (int i = 0; i < stack.Count; i++) if (vm.SelectedAnnotations.Contains(stack[i].Id)) { cur = i; break; }
             ann = stack[(cur + 1) % stack.Count];
             vm.Select([], [ann.Id]);
-            _drag = Drag.Move;
+            _drag = ann.Locked ? Drag.None : Drag.Move;
+            if (ann.Locked) Cursor = Cursors.No;
             return;
         }
         // A selected item can be dragged from anywhere inside its box, even a see-through interior.
@@ -592,7 +777,8 @@ public sealed class CanvasView : FrameworkElement
                 else vm.Select(vm.SelectedImages, vm.SelectedAnnotations.Append(ann.Id));
             }
             else if (!vm.SelectedAnnotations.Contains(ann.Id)) vm.Select([], [ann.Id]);
-            _drag = Drag.Move;
+            _drag = ann.Locked ? Drag.None : Drag.Move;
+            if (ann.Locked) Cursor = Cursors.No;
         }
         else if (img is not null)
         {
@@ -626,8 +812,7 @@ public sealed class CanvasView : FrameworkElement
             UpdateHoverCursor(hp);
             if (_vm is not null)
             {
-                var h = Tool == ToolKind.Select ? HitAnnotation(_vm.Document, ToDoc(hp))?.Id : null;
-                if (h != _hover) { _hover = h; InvalidateVisual(); }
+                UpdateHover(hp);
             }
             return;
         }
@@ -669,7 +854,8 @@ public sealed class CanvasView : FrameworkElement
                         TryPreview(d =>
                         {
                             var (d1, imgs) = _vm.SelectedImages.Count > 0 ? DocumentOps.Duplicate(d, _vm.SelectedImages, ix, iy) : (d, []);
-                            var (d2, anns) = _vm.SelectedAnnotations.Count > 0 ? DocumentOps.DuplicateAnnotations(d1, _vm.SelectedAnnotations, ix, iy) : (d1, []);
+                            var unlocked = _vm.SelectedAnnotations.Where(id => d.FindAnnotation(id) is { Locked: false }).ToHashSet();
+                            var (d2, anns) = unlocked.Count > 0 ? DocumentOps.DuplicateAnnotations(d1, unlocked, ix, iy) : (d1, []);
                             _dupImgIds = imgs; _dupAnnIds = anns;
                             return d2;
                         });
@@ -733,33 +919,136 @@ public sealed class CanvasView : FrameworkElement
 
     private Cursor? HoverHandleCursor(Point p)
     {
-        Rect? r = null;
-        if (_vm!.SelectedImages.Count == 1 && _vm.SelectedAnnotations.Count == 0 && _vm.SelectedLayer is { } l) r = ToView(l.Bounds.ToRectD());
-        else if (_vm.SelectedAnnotations.Count == 1 && _vm.SelectedImages.Count == 0 && _vm.PrimaryAnnotation is { } a) r = ToView(AnnotationDocBounds(_vm.Document, a));
-        if (r is null || HitHandle(r.Value, p) is not { } h) return null;
-        return h switch
+        var vm = _vm!;
+        if (vm.SelectedImages.Count == 1 && vm.SelectedAnnotations.Count == 0 && vm.SelectedLayer is { } l && HitHandle(ToView(l.Bounds.ToRectD()), p) is { } imageHandle)
+            return ResizeCursor(imageHandle);
+        if (vm.SelectedAnnotations.Count == 1 && vm.SelectedImages.Count == 0 && vm.PrimaryAnnotation is { } a && HitAnnotationHandle(a, p) is { } h)
+            return h.Kind switch
+            {
+                HandleKind.Rotate => RotateCursor.Value,
+                HandleKind.Start or HandleKind.End or HandleKind.Bend => Cursors.Cross,
+                HandleKind.Tail => Cursors.Hand,
+                _ => ResizeCursor(h.Corner),
+            };
+        if (HitAnnotation(vm.Document, ToDoc(p)) is { Locked: true }) return Cursors.No;
+        if (!vm.Document.AutoCanvas)
+        {
+            var canvas = ToView(vm.Document.ExportArea.ToRectD());
+            if (HitHandle(canvas, p) is { } canvasHandle) return ResizeCursor(canvasHandle);
+            if (OnRectEdge(canvas, p, 4)) return Cursors.SizeAll;
+        }
+        return null;
+    }
+
+    private static Cursor ResizeCursor(ResizeHandle h) => h switch
         {
             ResizeHandle.TopLeft or ResizeHandle.BottomRight => Cursors.SizeNWSE,
             ResizeHandle.TopRight or ResizeHandle.BottomLeft => Cursors.SizeNESW,
             ResizeHandle.Top or ResizeHandle.Bottom => Cursors.SizeNS,
             _ => Cursors.SizeWE,
         };
-    }
 
     private (double, double) Snap(DocumentState doc, double dx, double dy, bool alt)
     {
         _guides = [];
-        if (!SnapEnabled || alt || _vm!.SelectedImages.Count == 0) return (dx, dy);
-        RectD moving = default; bool any = false;
-        foreach (var id in _vm.SelectedImages)
-            if (doc.FindImage(id) is { } l) { moving = any ? moving.Union(l.Bounds.ToRectD()) : l.Bounds.ToRectD(); any = true; }
-        if (!any) return (dx, dy);
-        var targets = doc.Images.Where(i => i.Visible && !_vm.SelectedImages.Contains(i.Id))
+        _distances = [];
+        _spacing = [];
+        if (!SnapEnabled || alt || !TrySelectionBounds(doc, out var moving, movableOnly: true)) return (dx, dy);
+        var targets = doc.Images.Where(i => i.Visible && !_vm!.SelectedImages.Contains(i.Id))
             .Select(i => new SnapEngine.Candidate(i.Id.ToString(), i.Bounds.ToRectD())).ToList();
-        if (!doc.AutoCanvas) targets.Add(new SnapEngine.Candidate("canvas", doc.ExportArea.ToRectD()));
+        targets.AddRange(doc.Annotations.Where(a => (!a.Hidden || a is RedactionAnnotation) && !_vm!.SelectedAnnotations.Contains(a.Id))
+            .Select(a => new SnapEngine.Candidate(a.Id.ToString(), AnnotationDocBounds(doc, a))));
+        var neighbours = targets.ToArray();
+        targets.Add(new SnapEngine.Candidate("canvas", doc.ExportArea.ToRectD()));
         var r = SnapEngine.SnapMove(moving, dx, dy, targets, _view.Zoom);
-        _guides = r.Guides;
-        return (r.Dx, r.Dy);
+        var spacing = SpacingGuides.Snap(moving.Offset(dx, dy), neighbours, SnapEngine.DefaultToleranceDips / _view.Zoom);
+        bool useX = spacing.Equal.Any(e => e.Moving.Horizontal) &&
+            (!r.Guides.Any(g => g.Vertical) || Math.Abs(spacing.Dx) <= Math.Abs(r.Dx - dx));
+        bool useY = spacing.Equal.Any(e => !e.Moving.Horizontal) &&
+            (!r.Guides.Any(g => !g.Vertical) || Math.Abs(spacing.Dy) <= Math.Abs(r.Dy - dy));
+        double x = useX ? dx + spacing.Dx : r.Dx, y = useY ? dy + spacing.Dy : r.Dy;
+        _guides = r.Guides.Where(g => g.Vertical ? !useX : !useY).ToArray();
+        var final = moving.Offset(Math.Round(x), Math.Round(y));
+        _distances = SpacingGuides.Nearest(final, neighbours);
+        _spacing = SpacingGuides.Detect(final, neighbours);
+        return (x, y);
+    }
+
+    private bool TrySelectionBounds(DocumentState doc, out RectD bounds, bool movableOnly = false)
+    {
+        bounds = default;
+        if (_vm is null) return false;
+        bool any = false;
+        foreach (var id in _vm.SelectedImages)
+            if (doc.FindImage(id) is { } image)
+            {
+                bounds = any ? bounds.Union(image.Bounds.ToRectD()) : image.Bounds.ToRectD(); any = true;
+            }
+        foreach (var id in _vm.SelectedAnnotations)
+            if (doc.FindAnnotation(id) is { } annotation && (!movableOnly || !annotation.Locked))
+            {
+                var r = AnnotationDocBounds(doc, annotation);
+                bounds = any ? bounds.Union(r) : r; any = true;
+            }
+        return any;
+    }
+
+    private void UpdateHover(Point p)
+    {
+        if (_vm is null) return;
+        var doc = _vm.Displayed;
+        var ann = Tool == ToolKind.Select ? HitAnnotation(doc, ToDoc(p)) : null;
+        Guid? hover = ann?.Id ?? (Tool == ToolKind.Select ? DocumentOps.HitTestImage(doc, ToDoc(p))?.Id : null);
+        _hover = hover;
+        _distances = [];
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && _vm.SelectedImages.Count + _vm.SelectedAnnotations.Count == 1
+            && hover is { } id && !_vm.SelectedImages.Contains(id) && !_vm.SelectedAnnotations.Contains(id)
+            && TrySelectionBounds(doc, out var selected))
+        {
+            RectD? target = ann is not null ? AnnotationDocBounds(doc, ann) : doc.FindImage(id)?.Bounds.ToRectD();
+            if (target is { } rect) _distances = SpacingGuides.Between(selected, rect, id.ToString());
+        }
+        RefreshAdorners();
+    }
+
+    protected override void OnMouseLeave(MouseEventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (_drag != Drag.None) return;
+        _hover = null;
+        _distances = [];
+        RefreshAdorners();
+    }
+
+    protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e)
+    {
+        base.OnGotKeyboardFocus(e);
+        _keyboardFocus = !_pointerFocusing;
+        RefreshAdorners();
+    }
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        base.OnPreviewKeyDown(e);
+        _keyboardFocus = true;
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl) UpdateHover(Mouse.GetPosition(this));
+        RefreshAdorners();
+    }
+
+    protected override void OnPreviewKeyUp(KeyEventArgs e)
+    {
+        base.OnPreviewKeyUp(e);
+        if ((e.Key is Key.LeftCtrl or Key.RightCtrl) && _drag == Drag.None) { _distances = []; RefreshAdorners(); }
+    }
+
+    protected override void OnLostKeyboardFocus(KeyboardFocusChangedEventArgs e)
+    {
+        base.OnLostKeyboardFocus(e);
+        _keyboardFocus = false;
+        _spaceDown = false;
+        _distances = [];
+        CancelGesture();
+        RefreshAdorners();
     }
 
     private void TryPreview(Func<DocumentState, DocumentState> f)
@@ -776,8 +1065,10 @@ public sealed class CanvasView : FrameworkElement
         _angleLabel = null;
         ReleaseMouseCapture();
         _guides = [];
+        _distances = [];
+        _spacing = [];
         _curDoc = ToDoc(e.GetPosition(this));
-        if (drag == Drag.Pan) { Cursor = _spaceDown ? Cursors.Hand : null; return; }
+        if (drag == Drag.Pan) { Cursor = _spaceDown ? Cursors.Hand : null; RefreshAdorners(); return; }
 
         var preview = _vm.PreviewState;
         _vm.SetPreview(null);
@@ -843,6 +1134,11 @@ public sealed class CanvasView : FrameworkElement
         if (_drag == Drag.None) return false;
         _drag = Drag.None;
         _guides = [];
+        _distances = [];
+        _spacing = [];
+        _angleLabel = null;
+        _deferToggle = null;
+        _dupAnnIds = []; _dupImgIds = [];
         _freehand.Clear();
         if (IsMouseCaptured) ReleaseMouseCapture();
         _vm?.SetPreview(null);
@@ -926,8 +1222,8 @@ public sealed class CanvasView : FrameworkElement
         {
             ToolKind.Rectangle => Proto<RectangleAnnotation>(Tool) with { Bounds = b },
             ToolKind.Ellipse => Proto<EllipseAnnotation>(Tool) with { Bounds = b },
-            ToolKind.Arrow => Proto<ArrowAnnotation>(Tool) with { Start = a0, End = a1, Bounds = b, Control = null },
-            ToolKind.Line => Proto<LineAnnotation>(Tool) with { Start = a0, End = a1, Bounds = b, Control = null },
+            ToolKind.Arrow => PlaceLine(Proto<ArrowAnnotation>(Tool), a0, a1),
+            ToolKind.Line => PlaceLine(Proto<LineAnnotation>(Tool), a0, a1),
             ToolKind.Highlight => Proto<HighlightAnnotation>(Tool) with { Bounds = b },
             ToolKind.Redaction => Proto<RedactionAnnotation>(Tool) is var r ? r with { Bounds = b, Color = r.Color with { A = 255 } } : null,
             _ => null,
@@ -935,6 +1231,13 @@ public sealed class CanvasView : FrameworkElement
         if (ann is null) return;
         vm.AddAnnotation(ann);
     }
+
+    private static LineAnnotation PlaceLine(LineAnnotation prototype, PointD start, PointD end) => prototype with
+    {
+        Start = start, End = end, Bounds = RectD.FromPoints(start, end),
+        Control = prototype.Control is null ? null : new PointD((start.X + end.X) / 2 - (end.Y - start.Y) * 0.3,
+            (start.Y + end.Y) / 2 + (end.X - start.X) * 0.3),
+    };
 
     private void FinishFreehand()
     {
@@ -984,33 +1287,4 @@ public sealed class CanvasView : FrameworkElement
         }
     }
 
-    // ================================================================== annotation resize helpers
-
-    private static RectD ResizeRectD(RectD start, ResizeHandle h, double dx, double dy, bool keepAspect)
-    {
-        double l = start.X, t = start.Y, r = start.Right, b = start.Bottom;
-        if (h is ResizeHandle.TopLeft or ResizeHandle.Left or ResizeHandle.BottomLeft) l = Math.Min(l + dx, r - 1);
-        if (h is ResizeHandle.TopRight or ResizeHandle.Right or ResizeHandle.BottomRight) r = Math.Max(r + dx, l + 1);
-        if (h is ResizeHandle.TopLeft or ResizeHandle.Top or ResizeHandle.TopRight) t = Math.Min(t + dy, b - 1);
-        if (h is ResizeHandle.BottomLeft or ResizeHandle.Bottom or ResizeHandle.BottomRight) b = Math.Max(b + dy, t + 1);
-        if (keepAspect && start.Width > 0 && start.Height > 0 && h is ResizeHandle.TopLeft or ResizeHandle.TopRight or ResizeHandle.BottomLeft or ResizeHandle.BottomRight)
-        {
-            double aspect = start.Width / start.Height, w = r - l, ht = b - t;
-            if (w / start.Width >= ht / start.Height) ht = w / aspect; else w = ht * aspect;
-            if (h is ResizeHandle.TopLeft or ResizeHandle.BottomLeft) l = r - w; else r = l + w;
-            if (h is ResizeHandle.TopLeft or ResizeHandle.TopRight) t = b - ht; else b = t + ht;
-        }
-        return RectD.FromEdges(l, t, r, b);
-    }
-
-    /// <summary>Affinely maps an annotation's geometry so its document bounds go from <paramref name="from"/> to <paramref name="to"/>.</summary>
-    internal static DocumentState ResizeAnnotation(DocumentState doc, Guid id, RectD from, RectD to)
-    {
-        doc = AnnotationCanvas.Normalize(doc);
-        if (doc.FindAnnotation(id) is not { } a) return doc;
-        double sx = from.Width > 1e-6 ? to.Width / from.Width : 1, sy = from.Height > 1e-6 ? to.Height / from.Height : 1;
-        var moved = a.MapGeometry(p => new PointD(to.X + (p.X - from.X) * sx, to.Y + (p.Y - from.Y) * sy));
-        if (a is MagnifierAnnotation m && moved is MagnifierAnnotation mm) moved = mm with { SourceRegion = m.SourceRegion };
-        return DocumentOps.UpdateAnnotation(doc, moved);
-    }
 }

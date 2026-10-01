@@ -1,67 +1,39 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Input;
 
 namespace SnagItOpen.App.Infrastructure;
 
-/// <summary>Small code-built dialogs (single text prompt, multi-line text editor).</summary>
 public static class Dialogs
 {
-    /// <summary>Asks for one line of text. Returns null when canceled.</summary>
     public static string? Prompt(Window? owner, string title, string label, string initial = "")
     {
-        var box = new TextBox { Text = initial, MinWidth = 280, Margin = new Thickness(0, 6, 0, 10) };
-        System.Windows.Automation.AutomationProperties.SetName(box, label);
-        var w = Build(owner, title, label, box, out var ok);
+        var box = new TextBox { Text = initial, MinWidth = 280, MinHeight = 28, Margin = new Thickness(0, 8, 0, 0) };
+        AutomationProperties.SetName(box, label);
+        var content = new StackPanel(); content.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap }); content.Children.Add(box);
+        var window = new DialogWindow(owner, title, content);
         box.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
-        return w.ShowDialog() == true && ok() ? box.Text : null;
+        return window.ShowDialog() == true ? box.Text : null;
     }
-
-    /// <summary>Multi-line text editing (Enter inserts a line, Ctrl+Enter confirms).</summary>
-    public static string? EditText(Window? owner, string title, string initial)
+    public static void Info(Window? owner, string text) => Message(owner, "SnagItOpen", text, false);
+    public static void Error(Window? owner, string text) => Message(owner, "SnagItOpen", text, true);
+    private static bool ThemeAvailable => Application.Current?.TryFindResource("Bg.Window") is not null;
+    private static void Message(Window? owner, string title, string message, bool error)
     {
-        var box = new TextBox
-        {
-            Text = initial, AcceptsReturn = true, AcceptsTab = false, TextWrapping = TextWrapping.Wrap,
-            MinWidth = 360, MinHeight = 120, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 6, 0, 10),
-        };
-        System.Windows.Automation.AutomationProperties.SetName(box, "Annotation text");
-        var w = Build(owner, title, "Text (Ctrl+Enter to finish):", box, out var ok);
-        box.PreviewKeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { w.DialogResult = true; e.Handled = true; }
-        };
-        box.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
-        return w.ShowDialog() == true && ok() ? box.Text : null;
+        if (!ThemeAvailable) { MessageBox.Show(owner is { IsVisible: true } ? owner : null!, message, title, MessageBoxButton.OK, error ? MessageBoxImage.Warning : MessageBoxImage.Information); return; }
+        new DialogWindow(owner, title, new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 }, "OK", null).ShowDialog();
     }
-
-    private static Window Build(Window? owner, string title, string label, TextBox box, out Func<bool> ok)
+    public static MessageBoxResult Confirm(Window? owner, string title, string message, string primary = "Yes", string? secondary = "No", string? cancel = "Cancel")
     {
-        var w = new Window
+        if (!ThemeAvailable)
         {
-            Title = title, SizeToContent = SizeToContent.WidthAndHeight, ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner,
-            ShowInTaskbar = false,
-        };
-        if (owner is { IsVisible: true }) w.Owner = owner;
-        var okBtn = new Button { Content = "OK", IsDefault = !box.AcceptsReturn, MinWidth = 80, Margin = new Thickness(0, 0, 8, 0) };
-        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 80 };
-        okBtn.Click += (_, _) => w.DialogResult = true;
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(okBtn);
-        buttons.Children.Add(cancel);
-        var panel = new StackPanel { Margin = new Thickness(14) };
-        panel.Children.Add(new TextBlock { Text = label });
-        panel.Children.Add(box);
-        panel.Children.Add(buttons);
-        w.Content = panel;
-        ok = () => true;
-        return w;
+            var fallback = MessageBox.Show(owner is { IsVisible: true } ? owner : null!, message, title, secondary is null ? (cancel is null ? MessageBoxButton.OK : MessageBoxButton.OKCancel) : (cancel is null ? MessageBoxButton.YesNo : MessageBoxButton.YesNoCancel), MessageBoxImage.Question);
+            return fallback == MessageBoxResult.OK ? MessageBoxResult.Yes : fallback;
+        }
+        var result = MessageBoxResult.Cancel;
+        var window = new DialogWindow(owner, title, new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 }, primary, cancel);
+        window.Accepted = () => result = MessageBoxResult.Yes;
+        if (secondary is not null) window.AddSecondary(secondary, () => { result = MessageBoxResult.No; window.Finish(false); });
+        window.ShowDialog(); return result;
     }
-
-    public static void Info(Window? owner, string text) =>
-        MessageBox.Show(owner is { IsVisible: true } ? owner : null!, text, "SnagItOpen", MessageBoxButton.OK, MessageBoxImage.Information);
-
-    public static void Error(Window? owner, string text) =>
-        MessageBox.Show(owner is { IsVisible: true } ? owner : null!, text, "SnagItOpen", MessageBoxButton.OK, MessageBoxImage.Warning);
 }

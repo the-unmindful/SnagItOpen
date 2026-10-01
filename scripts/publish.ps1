@@ -24,7 +24,7 @@ $version = $props.Project.PropertyGroup.Version
 if (-not $version) { $version = "0.0.0" }
 
 Write-Host "Building SnagItOpen $version ($Runtime)"
-dotnet build .\SnagItOpen.slnx -c Release
+dotnet build .\SnagItOpen.slnx -c Release /m:1 /nr:false
 if ($LASTEXITCODE -ne 0) { throw "Build failed." }
 
 if (-not $SkipTests) {
@@ -35,9 +35,11 @@ if (-not $SkipTests) {
 }
 
 $out = Join-Path $root "artifacts\$Runtime"
+$artifactRoot = [IO.Path]::GetFullPath((Join-Path $root "artifacts")) + [IO.Path]::DirectorySeparatorChar
+if (-not [IO.Path]::GetFullPath($out).StartsWith($artifactRoot, [StringComparison]::OrdinalIgnoreCase)) { throw "Output must stay inside artifacts." }
 if (Test-Path $out) { Remove-Item -LiteralPath $out -Recurse -Force }
 dotnet publish .\src\SnagItOpen.App\SnagItOpen.App.csproj -c Release -r $Runtime --self-contained true `
-    -p:PublishSingleFile=false -p:PublishTrimmed=false -o $out
+    -p:PublishSingleFile=false -p:PublishTrimmed=false -o $out /m:1 /nr:false
 if ($LASTEXITCODE -ne 0) { throw "Publish failed." }
 
 Copy-Item -LiteralPath (Join-Path $root "README.md") -Destination $out

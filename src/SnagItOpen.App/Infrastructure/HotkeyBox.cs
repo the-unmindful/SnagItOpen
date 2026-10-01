@@ -87,7 +87,7 @@ public sealed class HotkeyBox : DockPanel
         if (!HotkeyGesture.TryParse(text, out var g))
         {
             _box.Text = "Add Ctrl, Alt, Shift or Win";
-            _box.Foreground = Brushes.Firebrick;
+            _box.SetResourceReference(TextBox.ForegroundProperty, "Status.Error");
             return;
         }
         _gesture = g.ToString();
@@ -103,7 +103,7 @@ public sealed class HotkeyBox : DockPanel
         if (mods.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
         if (mods.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
         _box.Text = string.Join("+", parts) + "+…";
-        _box.Foreground = SystemColors.GrayTextBrush;
+        _box.SetResourceReference(TextBox.ForegroundProperty, "Text.Secondary");
     }
 
     private void StopRecording()
@@ -114,9 +114,9 @@ public sealed class HotkeyBox : DockPanel
 
     private void Show()
     {
-        _box.Foreground = SystemColors.ControlTextBrush;
+        _box.SetResourceReference(TextBox.ForegroundProperty, "Text.Primary");
         _box.Text = _recording ? (_gesture.Length == 0 ? "Press keys…" : _gesture + "   (press new keys)") : _gesture.Length == 0 ? "None" : _gesture;
-        _box.Background = _recording ? new SolidColorBrush(Color.FromRgb(0xE8, 0xF1, 0xFB)) : SystemColors.WindowBrush;
-        if (!_recording && _gesture.Length == 0) _box.Foreground = SystemColors.GrayTextBrush;
+        _box.SetResourceReference(TextBox.BackgroundProperty, _recording ? "Accent.SelectSoft" : "Bg.Surface");
+        if (!_recording && _gesture.Length == 0) _box.SetResourceReference(TextBox.ForegroundProperty, "Text.Secondary");
     }
 }

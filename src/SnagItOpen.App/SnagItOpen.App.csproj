@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\Cursors\rotate.cur" />
     <ProjectReference Include="..\SnagItOpen.Core\SnagItOpen.Core.csproj" />
     <ProjectReference Include="..\SnagItOpen.Imaging\SnagItOpen.Imaging.csproj" />
     <ProjectReference Include="..\SnagItOpen.Windows\SnagItOpen.Windows.csproj" />

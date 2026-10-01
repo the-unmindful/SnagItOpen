@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows.Media.Imaging;
 using SnagItOpen.App.Capture;
+using SnagItOpen.App.Controls;
+using System.Windows.Threading;
 using SnagItOpen.App.Infrastructure;
 using SnagItOpen.App.Shell;
 using SnagItOpen.Core;
@@ -45,16 +47,21 @@ public sealed class EditorViewModel : ObservableObject
     private readonly CaptureCoordinator _capture;
     private string? _status = "Drop images here or paste a screenshot.";
     private bool _busy;
+    private readonly IStatusTimer _statusTimer;
+    public NotificationKind StatusKind { get; private set; } = NotificationKind.Info;
+    public event Action<Notification>? NotificationRaised;
+    public void Notify(NotificationKind kind, string title, string? message = null, params NotificationAction[] actions) => NotificationRaised?.Invoke(new(kind, title, message, actions));
     private string? _projectPath;
     private DocumentState _savedState;
     private HashSet<Guid> _selectedImages = [];
     private HashSet<Guid> _selectedAnnotations = [];
     private CancellationTokenSource? _importCts;
 
-    public EditorViewModel(AppServices services, CaptureCoordinator capture)
+    public EditorViewModel(AppServices services, CaptureCoordinator capture, IStatusTimer? statusTimer = null)
     {
         _services = services;
         _capture = capture;
+        _statusTimer = statusTimer ?? new StatusTimer();
         var initial = DocumentOps.Reflow(DocumentState.CreateEmpty() with
         {
             Layout = services.Settings.DefaultLayout,
@@ -63,6 +70,7 @@ public sealed class EditorViewModel : ObservableObject
         History = new History(initial);
         _savedState = initial;
         History.Changed += OnDocumentChanged;
+        _statusTimer.Elapsed += () => { if (StatusKind != NotificationKind.Error) Status = null; };
         RebuildList();
     }
 
@@ -82,13 +90,19 @@ public sealed class EditorViewModel : ObservableObject
     public DocumentState? PreviewState { get; private set; }
     public DocumentState Displayed => PreviewState ?? Document;
 
-    public string? Status { get => _status; set => Set(ref _status, value); }
+    public string? Status
+    {
+        get => _status;
+        set { Set(ref _status, value); _statusTimer.Stop(); StatusKind = NotificationKind.Info; OnPropertyChanged(nameof(StatusKind)); if (value is not null) _statusTimer.Start(TimeSpan.FromSeconds(8)); }
+    }
+    public void SetStatus(NotificationKind kind, string? message) { Status = message; StatusKind = kind; OnPropertyChanged(nameof(StatusKind)); if (kind == NotificationKind.Error) _statusTimer.Stop(); }
+    public Rgba32? BackgroundColor { get => Document.Background; set { if (value is { } color) Commit("Background", d => DocumentOps.SetBackground(d, color)); } }
     public bool IsBusy { get => _busy; private set { if (Set(ref _busy, value)) System.Windows.Input.CommandManager.InvalidateRequerySuggested(); } }
     public bool IsEmpty => Document.Images.Length == 0 && Document.Annotations.Length == 0;
     public bool HasContent => Document.HasVisibleContent;
     public bool IsDirty => !ReferenceEquals(Document, _savedState);
     public string? ProjectPath => _projectPath;
-    public string Title => $"{(_projectPath is null ? Document.Name : Path.GetFileNameWithoutExtension(_projectPath))}{(IsDirty ? " *" : "")} - SnagItOpen";
+    public string Title => $"{(_projectPath is null ? Document.Name : Path.GetFileNameWithoutExtension(_projectPath))}{(IsDirty ? " •" : "")} - SnagItOpen";
     public string CanvasSize => $"{Document.ExportArea.Width} × {Document.ExportArea.Height} px";
     public string? UndoLabel => History.UndoLabel is { } l ? $"Undo {l}" : "Undo";
     public string? RedoLabel => History.RedoLabel is { } l ? $"Redo {l}" : "Redo";
@@ -242,12 +256,6 @@ public sealed class EditorViewModel : ObservableObject
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
 
-    public void ToggleImage(Guid id)
-    {
-        var s = _selectedImages.ToHashSet();
-        if (!s.Add(id)) s.Remove(id);
-        Select(s, _selectedAnnotations);
-    }
 
     public void ClearSelection() => Select([], []);
 
@@ -329,7 +337,6 @@ public sealed class EditorViewModel : ObservableObject
         }
     }
 
-    public void CancelImport() => _importCts?.Cancel();
 
     private void ReportBatch(int ok, List<string> failed)
     {
@@ -602,22 +609,7 @@ public sealed class EditorViewModel : ObservableObject
         Status = $"{kind} tool reset to its built-in style.";
     }
 
-    public void SetLocked(bool locked)
-    {
-        if (_selectedAnnotations.Count == 0) return;
-        UpdateSelectedAnnotations(a => a with { Locked = locked }, locked ? "Lock" : "Unlock");
-    }
 
-    /// <summary>Tab / Shift+Tab: select the next / previous annotation in drawing order.</summary>
-    public void CycleAnnotation(bool forward)
-    {
-        var anns = Document.Annotations;
-        if (anns.Length == 0) return;
-        int cur = _selectedAnnotations.Count == 1 ? Array.FindIndex(anns, a => a.Id == _selectedAnnotations.First()) : -1;
-        int next = cur < 0 ? (forward ? 0 : anns.Length - 1) : (cur + (forward ? 1 : -1) + anns.Length) % anns.Length;
-        Select([], [anns[next].Id]);
-        Status = $"{anns[next].Kind} ({next + 1} of {anns.Length})";
-    }
 
     public void AddEffect(Guid layerId, ImageEffect effect) => Commit(effect.Kind == ImageEffectKind.Blur ? "Blur" : "Pixelate", d => DocumentOps.AddEffect(d, layerId, effect));
 
@@ -644,6 +636,7 @@ public sealed class EditorViewModel : ObservableObject
             var opaque = await _services.Imaging.InvokeAsync(() => px.FlattenOnto(Document.Background.A == 255 ? Document.Background : Rgba32.White).ToBitmap());
             var r = await _services.Clipboard.CopyImageAsync(opaque, png);
             Status = r.IsSuccess ? $"Copied {px.Width} × {px.Height} image." : r.Message;
+            if (r.IsSuccess) Notify(NotificationKind.Success, "Copied"); else ErrorRaised?.Invoke(r.Message ?? "Copy failed.");
         }
         finally { IsBusy = false; }
     }
@@ -658,6 +651,7 @@ public sealed class EditorViewModel : ObservableObject
             if (r.IsSuccess)
             {
                 Status = $"Exported {r.Value!.Width} × {r.Value.Height} to {Path.GetFileName(r.Value.Path)}.";
+                Notify(NotificationKind.Success, "Exported", Path.GetFileName(r.Value.Path), new NotificationAction("Show in folder", () => Infrastructure.OutputFolders.Show(r.Value.Path)));
                 _services.Settings = _services.Settings with { LastExportDirectory = Path.GetDirectoryName(r.Value.Path) };
                 return true;
             }
@@ -692,10 +686,17 @@ public sealed class EditorViewModel : ObservableObject
                 return false;
             }
             _projectPath = r.Value;
+            _services.SaveUiState(_services.UiState.WithRecentProject(Path.GetFullPath(r.Value!)));
             _savedState = doc;
             _services.Autosave.MarkClean(doc.Id);
             _services.Settings = _services.Settings with { LastProjectDirectory = Path.GetDirectoryName(r.Value) };
-            Status = $"Saved {Path.GetFileName(r.Value)}. The project keeps original image pixels, including cropped or redacted areas.";
+            Status = $"Saved {Path.GetFileName(r.Value)}.";
+            Notify(NotificationKind.Success, "Saved project");
+            if (!_services.UiState.HasShownTip("project-originals"))
+            {
+                Notify(NotificationKind.Info, "Projects keep original pixels", "Use Copy or Export to share a flattened image with redactions applied.");
+                _services.SaveUiState(_services.UiState.WithTipShown("project-originals"));
+            }
             OnAllPropertiesChanged();
             return true;
         }
@@ -728,6 +729,7 @@ public sealed class EditorViewModel : ObservableObject
                 return false;
             }
             LoadDocument(r.Value!, Path.GetFullPath(path), markSaved: true);
+            _services.SaveUiState(_services.UiState.WithRecentProject(Path.GetFullPath(path)));
             Status = $"Opened {Path.GetFileName(path)}.";
             return true;
         }
@@ -760,23 +762,31 @@ public sealed class EditorViewModel : ObservableObject
     public void DiscardRecovery() => _services.Autosave.MarkClean(Document.Id);
 
     // ------------------------------------------------------------------ capture routing
+    public bool LastCaptureSucceeded { get; private set; }
+
+    public async Task<IReadOnlyList<ImageAsset>> StoreCapturesAsync(IReadOnlyList<CaptureItem> items)
+    {
+        var assets = new List<ImageAsset>();
+        foreach (var item in items)
+        {
+            var asset = await _services.Importer.ImportPixelsAsync(item.Pixels);
+            assets.Add(asset);
+            if (_services.Settings.SaveCapturesToHistory) AddToHistory(asset, item.Pixels);
+        }
+        return assets;
+    }
 
     /// <summary>
     /// Adds captured images per destination as one undoable step. Returns false when nothing was added.
     /// </summary>
     public async Task<bool> AddCapturesAsync(IReadOnlyList<CaptureItem> items, CaptureDestination destination, bool combineVertical = true)
     {
+        LastCaptureSucceeded = false;
         if (items.Count == 0) return false;
         IsBusy = true;
         try
         {
-            var assets = new List<ImageAsset>();
-            foreach (var it in items)
-            {
-                var a = await _services.Importer.ImportPixelsAsync(it.Pixels);
-                assets.Add(a);
-                if (_services.Settings.SaveCapturesToHistory) AddToHistory(a, it.Pixels);
-            }
+            var assets = await StoreCapturesAsync(items);
 
             if (destination == CaptureDestination.CopyOnly)
             {
@@ -785,6 +795,8 @@ public sealed class EditorViewModel : ObservableObject
                 var opaque = await _services.Imaging.InvokeAsync(() => px.FlattenOnto(Rgba32.White).ToBitmap());
                 var r = await _services.Clipboard.CopyImageAsync(opaque, png);
                 Status = r.IsSuccess ? $"Copied {px.Width} × {px.Height} capture." : r.Message;
+                if (r.IsSuccess) Notify(NotificationKind.Success, "Copied"); else ErrorRaised?.Invoke(r.Message ?? "Copy failed.");
+                LastCaptureSucceeded = r.IsSuccess;
                 return false;
             }
 
@@ -799,6 +811,7 @@ public sealed class EditorViewModel : ObservableObject
                 var nd = DocumentOps.AddImages(baseDoc, assets.Select((a, i) => (a, ImageLayer.ForAsset(a, 0, 0, $"Capture {i + 1}"))).ToArray());
                 LoadDocument(nd, null, markSaved: false);
                 Status = $"Captured {DescribeSizes(assets)}.";
+                LastCaptureSucceeded = true;
                 return true;
             }
 
@@ -823,6 +836,7 @@ public sealed class EditorViewModel : ObservableObject
             });
             if (ok)
             {
+                LastCaptureSucceeded = true;
                 var added = Document.LayoutOrder.TakeLast(items.Count).ToArray();
                 Select(added);
                 Status = $"Captured {DescribeSizes(assets)}.";

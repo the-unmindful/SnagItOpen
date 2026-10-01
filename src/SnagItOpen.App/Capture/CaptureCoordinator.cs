@@ -16,7 +16,8 @@ namespace SnagItOpen.App.Capture;
 /// <summary>One captured image with the physical desktop rectangle it came from.</summary>
 public sealed record CaptureItem(PixelBuffer Pixels, PixelRect Bounds);
 
-public sealed record CaptureOutcome(CaptureStatus Status, IReadOnlyList<CaptureItem> Items, string? Message = null)
+public sealed record CaptureOutcome(CaptureStatus Status, IReadOnlyList<CaptureItem> Items, string? Message = null,
+    CaptureOverlayAction Action = CaptureOverlayAction.Edit)
 {
     public static CaptureOutcome Canceled() => new(CaptureStatus.Canceled, []);
     public static CaptureOutcome Fail(string message) => new(CaptureStatus.Failed, [], message);
@@ -36,7 +37,14 @@ public sealed class CaptureCoordinator
 
     public bool IsBusy => _busy;
 
-    public async Task<CaptureOutcome> CaptureAsync(CaptureMode mode, CaptureOptions options, CancellationToken ct = default)
+    public Task<CaptureOutcome> CaptureAsync(CaptureMode mode, CaptureOptions options, CancellationToken ct = default) =>
+        CaptureCoreAsync(mode, options, CapturePicker.None, ct);
+
+    /// <summary>Opens the nonmodal physical-size or aspect presets inside the frozen overlay.</summary>
+    public Task<CaptureOutcome> CaptureWithPickerAsync(bool aspect, CaptureOptions options, CancellationToken ct = default) =>
+        CaptureCoreAsync(CaptureMode.Region, options, aspect ? CapturePicker.Aspect : CapturePicker.Size, ct);
+
+    private async Task<CaptureOutcome> CaptureCoreAsync(CaptureMode mode, CaptureOptions options, CapturePicker picker, CancellationToken ct)
     {
         if (_busy) return CaptureOutcome.Fail("A capture is already in progress.");
         _busy = true;
@@ -51,6 +59,7 @@ public sealed class CaptureCoordinator
             if (monitors.Count == 0) return CaptureOutcome.Fail("No displays were found.");
             var desktop = MonitorTopology.VirtualBounds(monitors);
             var fingerprint = MonitorTopology.Fingerprint(monitors);
+            string? notice = null;
 
             // Non-interactive modes.
             PixelRect? direct = mode switch
@@ -63,7 +72,7 @@ public sealed class CaptureCoordinator
             };
             if (mode == CaptureMode.LastRegion && direct is null)
             {
-                ShowNotice("The last region is unavailable or the display layout changed. Select a region.");
+                notice = "The last region is unavailable or the display layout changed. Select a new region.";
                 mode = CaptureMode.Region;
             }
             if (direct is { } d)
@@ -73,7 +82,8 @@ public sealed class CaptureCoordinator
             }
 
             // Interactive: freeze the whole desktop first so overlays never appear in the output.
-            var windows = _services.Windows.Eligible(desktop).Select(w => w.Bounds).ToList();
+            var catalog = _services.Windows.Eligible(desktop);
+            var windows = catalog.Select(w => w.Bounds).ToList();
             if (mode == CaptureMode.Window && foreground != IntPtr.Zero && WindowCatalog.Describe(foreground) is { } fw
                 && fw.ProcessId != (uint)Environment.ProcessId && !fw.IsMinimized)
             {
@@ -83,18 +93,20 @@ public sealed class CaptureCoordinator
             }
             var frame = await Task.Run(() => GdiScreenCapture.Capture(desktop, monitors, options.IncludeCursor), ct);
             var selection = new RegionSelection(desktop, options.Shape, options.Constraint,
-                multiRegion: mode == CaptureMode.MultiRegion, windows: windows, windowsOnly: mode == CaptureMode.Window);
-            var rects = await SelectAsync(frame, monitors, selection, HintFor(mode, options), ct);
+                multiRegion: mode == CaptureMode.MultiRegion, windows: windows, windowsOnly: mode == CaptureMode.Window,
+                captureOnRelease: _services.Settings.CaptureOnRelease);
+            var state = new CaptureOverlayState(_services, selection, mode, catalog, monitors, picker) { Notice = notice };
+            var rects = await SelectAsync(frame, monitors, state, ct);
             if (rects is null || rects.Count == 0) return CaptureOutcome.Canceled();
 
             var items = new List<CaptureItem>();
             foreach (var r in rects)
             {
                 var px = ToBuffer(frame.Crop(r));
-                if (mode != CaptureMode.Window && mode != CaptureMode.MultiRegion)
+                if (!selection.WindowsOnly && !selection.MultiRegion)
                 {
-                    if (options.Shape == CaptureShape.Ellipse) px = CaptureMask.ApplyEllipse(px);
-                    else if (options.Shape == CaptureShape.Freehand && selection.ResultPolygon.Count >= 3)
+                    if (selection.Shape == CaptureShape.Ellipse) px = CaptureMask.ApplyEllipse(px);
+                    else if (selection.Shape == CaptureShape.Freehand && selection.ResultPolygon.Count >= 3)
                     {
                         try { px = CaptureMask.ApplyPolygon(px, CaptureMask.Simplify(selection.ResultPolygon, 0.75)); }
                         catch (ArgumentException) { return CaptureOutcome.Canceled(); }
@@ -102,9 +114,9 @@ public sealed class CaptureCoordinator
                 }
                 items.Add(new CaptureItem(px, r));
             }
-            if (items.Count == 1 && mode is CaptureMode.Region)
+            if (items.Count == 1 && state.Mode is CaptureMode.Region)
                 _services.LastRegion.Save(new LastRegion(items[0].Bounds, fingerprint));
-            return Ok(items);
+            return Ok(items, state.Action);
         }
         catch (OperationCanceledException) { return CaptureOutcome.Canceled(); }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or OutOfMemoryException)
@@ -137,11 +149,14 @@ public sealed class CaptureCoordinator
         {
             await SettleAsync(ct);
             var monitors = _services.Monitors.GetMonitors();
+            if (monitors.Count == 0) return null;
             var desktop = MonitorTopology.VirtualBounds(monitors);
-            var windows = _services.Windows.Eligible(desktop).Select(w => w.Bounds).ToList();
+            var catalog = _services.Windows.Eligible(desktop);
+            var windows = catalog.Select(w => w.Bounds).ToList();
             var frame = await Task.Run(() => GdiScreenCapture.Capture(desktop, monitors, false), ct);
             var sel = new RegionSelection(desktop, windows: windows);
-            var r = await SelectAsync(frame, monitors, sel, hint, ct);
+            var state = new CaptureOverlayState(_services, sel, CaptureMode.Region, catalog, monitors, CapturePicker.None);
+            var r = await SelectAsync(frame, monitors, state, ct);
             return r is { Count: > 0 } ? r[0] : null;
         }
         catch (OperationCanceledException) { return null; }
@@ -152,7 +167,8 @@ public sealed class CaptureCoordinator
         }
     }
 
-    private static CaptureOutcome Ok(List<CaptureItem> items) => new(CaptureStatus.Success, items);
+    private static CaptureOutcome Ok(List<CaptureItem> items, CaptureOverlayAction action = CaptureOverlayAction.Edit) =>
+        new(CaptureStatus.Success, items, Action: action);
 
     private PixelRect? LastRegionStoreResolve(string fingerprint) =>
         Storage.Settings.LastRegionStore.Resolve(_services.LastRegion.Load(), fingerprint)?.Bounds;
@@ -169,8 +185,9 @@ public sealed class CaptureCoordinator
     };
 
     private async Task<IReadOnlyList<PixelRect>?> SelectAsync(CapturedFrame frame, IReadOnlyList<MonitorInfo> monitors,
-        RegionSelection selection, string hint, CancellationToken ct)
+        CaptureOverlayState state, CancellationToken ct)
     {
+        var selection = state.Selection;
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnChanged() { if (selection.IsFinished) tcs.TrySetResult(true); }
         void OnTopology(object? s, EventArgs e) => Application.Current.Dispatcher.BeginInvoke(selection.Cancel);
@@ -185,7 +202,7 @@ public sealed class CaptureCoordinator
             {
                 var part = frame.Crop(m.Bounds);
                 var bmp = new PixelBuffer(part.Width, part.Height, part.Pixels).ToBitmap();
-                var w = new RegionOverlayWindow(m, bmp, selection, hint);
+                var w = new RegionOverlayWindow(m, bmp, state);
                 overlays.Add(w);
                 w.Show();
             }
@@ -198,6 +215,7 @@ public sealed class CaptureCoordinator
         }
         finally
         {
+            state.Notice = null;
             selection.Changed -= OnChanged;
             _services.Monitors.TopologyChanged -= OnTopology;
             foreach (var o in overlays) o.Close();
@@ -232,31 +250,22 @@ public sealed class CaptureCoordinator
     }
 
     /// <summary>Small countdown badge excluded from capture; the desktop freezes only after it closes.</summary>
-    private static async Task<bool> CountdownAsync(int seconds, CancellationToken ct)
+    private async Task<bool> CountdownAsync(int seconds, CancellationToken ct)
     {
-        var text = new TextBlock { FontSize = 28, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Margin = new Thickness(18, 8, 18, 8) };
-        var w = new Window
-        {
-            WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Topmost = true,
-            ShowActivated = false, SizeToContent = SizeToContent.WidthAndHeight, Title = "SnagItOpen countdown",
-            Background = new SolidColorBrush(Color.FromArgb(230, 30, 30, 30)), Content = text,
-            WindowStartupLocation = WindowStartupLocation.Manual, Left = 24, Top = 24,
-        };
-        bool canceled = false;
-        w.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Escape) canceled = true; };
-        w.MouseRightButtonUp += (_, _) => canceled = true;
-        w.SourceInitialized += (_, _) => { AppNative.MakeToolWindow(w); AppNative.ExcludeFromCapture(w); };
+        var monitors = _services.Monitors.GetMonitors();
+        if (monitors.Count == 0) return false;
+        var monitor = MonitorTopology.At(monitors, AppNative.CursorPosition()) ?? monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors[0];
+        var w = new CountdownBadgeWindow(monitor);
         try
         {
+            w.Update(seconds, seconds);
             w.Show();
-            for (int s = seconds; s > 0; s--)
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            while (clock.Elapsed.TotalSeconds < seconds)
             {
-                text.Text = $"Capturing in {s}…  (right-click cancels)";
-                for (int i = 0; i < 10; i++)
-                {
-                    await Task.Delay(100, ct);
-                    if (canceled) return false;
-                }
+                if (w.CancellationRequested) return false;
+                w.Update(Math.Max(0, seconds - clock.Elapsed.TotalSeconds), seconds);
+                await Task.Delay(ThemeService.AnimationsEnabled ? 40 : 100, ct);
             }
             return true;
         }
@@ -268,6 +277,4 @@ public sealed class CaptureCoordinator
         }
     }
 
-    private static void ShowNotice(string message) =>
-        MessageBox.Show(message, "SnagItOpen", MessageBoxButton.OK, MessageBoxImage.Information);
 }

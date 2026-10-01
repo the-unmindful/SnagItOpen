@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using SnagItOpen.App.Capture;
@@ -17,7 +17,16 @@ namespace SnagItOpen.App;
 /// </summary>
 public partial class App : Application
 {
-    private const string AppId = "SnagItOpen";
+    private static string AppId
+    {
+        get
+        {
+            var portableRoot = Environment.GetEnvironmentVariable("SNAGITOPEN_DATA");
+            if (string.IsNullOrWhiteSpace(portableRoot)) return "SnagItOpen";
+            var key = Path.GetFullPath(portableRoot).TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant();
+            return "SnagItOpen." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..16];
+        }
+    }
     private SingleInstanceService? _instance;
     private AppServices? _services;
     private ThemeService? _theme;
@@ -40,8 +49,7 @@ public partial class App : Application
         }
 
         DispatcherUnhandledException += OnUnhandled;
-        // Light until U03 wires the ThemeMode setting; chrome does not use tokens yet, so nothing changes visually.
-        _theme = new ThemeService(this, AppTheme.Light);
+        _theme = new ThemeService(this, AppTheme.System);
         try
         {
             _services = new AppServices(AppPaths.Default());
@@ -53,6 +61,7 @@ public partial class App : Application
             return;
         }
 
+        _theme.SetMode(_services.Settings.ThemeMode);
         var capture = new CaptureCoordinator(_services);
         var vm = new EditorViewModel(_services, capture);
         _services.Retention.AddOwner(vm.ProtectedAssets);
@@ -82,11 +91,10 @@ public partial class App : Application
         if (candidates.Count == 0) return;
         var c = candidates[0];
         var s = c.Snapshot;
-        var r = MessageBox.Show(owner,
+        var r = Dialogs.Confirm(owner, "Recover unsaved work",
             $"SnagItOpen found an autosaved composition from {s.SavedAt:g} ({s.Document.Images.Length} image(s)).\n\n" +
             "Recover it? It opens as an unsaved composition; any original project file is left unchanged.\n\n" +
-            "Choose No to discard the draft.",
-            "Recover unsaved work", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            "Choose Discard to remove the draft.", "Recover", "Discard");
         if (r == MessageBoxResult.Yes)
         {
             vm.LoadDocument(s.Document, null, markSaved: false);
@@ -103,8 +111,7 @@ public partial class App : Application
         _services?.Log("Unhandled: " + e.Exception);
         // Try to keep an autosave of the current work before reporting.
         try { _services?.Autosave.FlushAsync().Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
-        MessageBox.Show($"An unexpected error occurred:\n\n{e.Exception.Message}\n\nYour work was autosaved where possible. Details are in the log folder.",
-            "SnagItOpen", MessageBoxButton.OK, MessageBoxImage.Error);
+        Dialogs.Error(MainWindow, $"An unexpected error occurred:\n\n{e.Exception.Message}\n\nYour work was autosaved where possible. Details are in the log folder.");
         e.Handled = true;
     }
 

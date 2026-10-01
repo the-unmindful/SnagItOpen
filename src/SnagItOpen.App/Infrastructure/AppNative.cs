@@ -10,6 +10,11 @@ internal static class AppNative
 {
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -44,6 +49,12 @@ internal static class AppNative
     private const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
 
     public static IntPtr Handle(Window w) => new WindowInteropHelper(w).EnsureHandle();
+    public static PixelRect? WindowBounds(Window w)
+    {
+        var handle = new WindowInteropHelper(w).Handle;
+        return handle != IntPtr.Zero && GetWindowRect(handle, out var r) && r.Right > r.Left && r.Bottom > r.Top ? new PixelRect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top) : null;
+    }
+    public static void PlaceWindow(Window w, PixelRect physical) => SetWindowPos(Handle(w), IntPtr.Zero, physical.X, physical.Y, physical.Width, physical.Height, SWP_NOACTIVATE | 0x0004);
 
     /// <summary>Places a window at exact physical desktop pixels, topmost.</summary>
     public static void PlaceTopmost(Window w, PixelRect physical, bool activate = true) =>

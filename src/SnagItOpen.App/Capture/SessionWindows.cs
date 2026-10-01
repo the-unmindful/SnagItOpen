@@ -6,6 +6,7 @@ using System.Windows.Media;
 using SnagItOpen.App.Editor;
 using SnagItOpen.App.Infrastructure;
 using SnagItOpen.App.Shell;
+using SnagItOpen.App.Shell.DialogWindows;
 using SnagItOpen.Core.Capture;
 using SnagItOpen.Core.Documents;
 using SnagItOpen.Core.Editing;
@@ -45,6 +46,10 @@ internal abstract class SessionPanel : Window
         Topmost = true;
         ShowInTaskbar = false;
         ShowActivated = true;
+        FontFamily = new FontFamily("Segoe UI");
+        SetResourceReference(BackgroundProperty, "Bg.Window");
+        SetResourceReference(ForegroundProperty, "Text.Primary");
+        StatusText.SetResourceReference(TextBlock.ForegroundProperty, "Text.Primary");
         AutomationProperties.SetLiveSetting(StatusText, AutomationLiveSetting.Polite);
         var root = new StackPanel { Margin = new Thickness(12) };
         root.Children.Add(StatusText);
@@ -57,6 +62,8 @@ internal abstract class SessionPanel : Window
     protected Button AddButton(string text, Action onClick, string? tip = null)
     {
         var b = new Button { Content = text, Margin = new Thickness(0, 0, 6, 6), Padding = new Thickness(8, 3, 8, 3), ToolTip = tip };
+        AutomationProperties.SetName(b, text);
+        if (tip is not null) AutomationProperties.SetHelpText(b, tip);
         b.Click += (_, _) => onClick();
         Buttons.Children.Add(b);
         return b;
@@ -91,7 +98,8 @@ internal abstract class SessionPanel : Window
         var src = PresentationSource.FromVisual(this);
         double s = src?.CompositionTarget?.TransformToDevice.M11 ?? 1;
         int w = (int)Math.Ceiling(ActualWidth * s), h = (int)Math.Ceiling(ActualHeight * s);
-        var desktop = MonitorTopology.VirtualBounds(Services.Monitors.GetMonitors());
+        var monitors = Services.Monitors.GetMonitors();
+        var desktop = MonitorTopology.Dominant(monitors, Region)?.WorkArea ?? MonitorTopology.VirtualBounds(monitors);
         int x = Region.Right + 12 + w <= desktop.Right ? Region.Right + 12
               : Region.X - 12 - w >= desktop.X ? Region.X - 12 - w
               : Math.Max(desktop.X, Region.Right - w);
@@ -233,7 +241,8 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
     /// <summary>Manual seam correction for an uncertain match; accepted content is always kept.</summary>
     private void ResolvePending()
     {
-        if (_session?.Pending is not { } pending) return;
+        if (_session?.Pending is not { } pending || _session.Frames.Count == 0) return;
+        var previous = _session.Frames[^1].Frame;
         var m = _session.PendingMatch;
         string why = m?.Confidence switch
         {
@@ -241,10 +250,11 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
             Core.Stitching.OverlapConfidence.Ambiguous => "several positions match equally well",
             _ => "no matching rows were found",
         };
-        var answer = Dialogs.Prompt(this, "Correct the seam",
-            $"The overlap could not be determined because {why}.\nHow many rows at the top of the new frame repeat the previous frame (0–{pending.Height - 1})?\nLeave empty to skip this frame.",
-            m is { Overlap: > 0 } ? m.Overlap.ToString() : "0");
-        if (answer is not null && int.TryParse(answer.Trim(), out var n) && _session.AcceptPending(n))
+        var answer = SeamDialog.Show(this, pending.Height, m is { Overlap: > 0 } ? m.Overlap : 0,
+            renderPreview: overlap => ScrollingSeamPreview.Build(previous, pending, overlap).ToBitmap(),
+            note: $"The overlap could not be determined because {why}. Cancel skips this frame.", allowZero: true,
+            beforePreview: ScrollingSeamPreview.Build(previous, pending, 0).ToBitmap());
+        if (answer is { } n && _session.AcceptPending(n))
             SetStatus($"Frame added with {n} overlapping rows. {Progress()}");
         else
             SetStatus($"Frame skipped. {Progress()} Scroll and capture again, or Finish.");
@@ -389,14 +399,16 @@ internal sealed class IntervalCaptureWindow : SessionPanel
 
     private readonly TimeSpan _interval;
     private readonly int _maxFrames;
+    private readonly CaptureDestination? _destination;
     private readonly CancellationTokenSource _cts = new();
     private bool _discard;
 
-    public IntervalCaptureWindow(AppServices services, CaptureCoordinator coordinator, EditorViewModel vm, Window owner, TimeSpan interval, int maxFrames)
+    public IntervalCaptureWindow(AppServices services, CaptureCoordinator coordinator, EditorViewModel vm, Window owner, TimeSpan interval, int maxFrames, CaptureDestination? destination = null)
         : base(services, coordinator, vm, owner, "Interval capture")
     {
         _interval = interval;
-        _maxFrames = maxFrames;
+        _maxFrames = Math.Clamp(maxFrames, 1, 200);
+        _destination = destination;
         AddButton("Stop and keep", () => _cts.Cancel(), "Stops capturing and adds the frames captured so far");
         AddButton("Cancel", () => { _discard = true; _cts.Cancel(); });
     }
@@ -432,7 +444,7 @@ internal sealed class IntervalCaptureWindow : SessionPanel
         var kept = frames.ToList();
         Close();
         if (_discard || kept.Count == 0) { Vm.Status = "Interval capture canceled; nothing was added."; return; }
-        var dest = Services.Settings.DefaultDestination == CaptureDestination.CopyOnly ? CaptureDestination.AppendBelow : Services.Settings.DefaultDestination;
+        var dest = _destination ?? (Services.Settings.DefaultDestination == CaptureDestination.CopyOnly ? CaptureDestination.AppendBelow : Services.Settings.DefaultDestination);
         await Vm.AddCapturesAsync(kept.Select(f => new CaptureItem(f, Region)).ToList(), dest);
         if (TopologyChanged) Vm.Status += " (stopped early because displays changed)";
     }

@@ -8,9 +8,11 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using SnagItOpen.App.Capture;
+using SnagItOpen.App.Controls;
 using SnagItOpen.App.Editor;
 using SnagItOpen.App.Infrastructure;
 using SnagItOpen.App.Library;
+using SnagItOpen.App.Shell.DialogWindows;
 using SnagItOpen.Core;
 using SnagItOpen.Core.Capture;
 using SnagItOpen.Core.Documents;
@@ -34,61 +36,41 @@ namespace SnagItOpen.App.Shell;
 public partial class MainWindow : Window
 {
     private const string ImageIdFormat = "SnagItOpen.ImageId";
-    private static readonly (ToolKind Kind, string Label, string Tip)[] ToolDefs =
-    [
-        (ToolKind.Select, "Select", "Select, move and resize (V)"),
-        (ToolKind.Crop, "Crop", "Drag over an image to keep that area (C)"),
-        (ToolKind.Arrow, "Arrow", "Arrow (A)"),
-        (ToolKind.Line, "Line", "Straight line (L)"),
-        (ToolKind.Rectangle, "Rect", "Rectangle (R)"),
-        (ToolKind.Ellipse, "Ellipse", "Ellipse (E)"),
-        (ToolKind.Text, "Text", "Text (T)"),
-        (ToolKind.Callout, "Callout", "Text box with a pointer"),
-        (ToolKind.Highlight, "Highlight", "Translucent highlighter (H)"),
-        (ToolKind.Step, "Step", "Numbered step (N)"),
-        (ToolKind.Freehand, "Pen", "Freehand drawing (P)"),
-        (ToolKind.Redaction, "Redact", "Opaque redaction box (secure in exported images)"),
-        (ToolKind.Blur, "Blur", "Blur part of an image (visual only, not secure)"),
-        (ToolKind.Pixelate, "Pixelate", "Pixelate part of an image (visual only, not secure)"),
-        (ToolKind.Magnifier, "Magnify", "Drag over a detail to show it enlarged"),
-        (ToolKind.Stamp, "Stamp", "Click to place a symbol"),
-        (ToolKind.CutOut, "Cut out", "Drag across a strip to remove it (wide drag removes rows, tall drag removes columns)"),
-    ];
-
     private readonly AppServices _services;
     private readonly EditorViewModel _vm;
     private readonly CaptureCoordinator _capture;
     private readonly Dictionary<ToolKind, RadioButton> _toolButtons = [];
     private readonly AnnotationPropertiesPanel _props;
     private readonly ImageEdgePanel _edges;
-    private bool _syncing, _exiting, _trayHintShown, _propsPending;
+    private bool _syncing, _exiting, _propsPending;
     private Point _listDragStart;
     private ImageListItemViewModel? _listDragItem;
     private GlobalHotkeyService? _hotkeys;
     private TrayService? _tray;
+    private readonly bool _shutdownOnClose;
 
-    public MainWindow(AppServices services, EditorViewModel vm, CaptureCoordinator capture)
+    public MainWindow(AppServices services, EditorViewModel vm, CaptureCoordinator capture, bool shutdownOnClose = true)
     {
         _services = services;
         _vm = vm;
         _capture = capture;
+        _shutdownOnClose = shutdownOnClose;
         InitializeComponent();
         DataContext = vm;
 
-        AlignBox.ItemsSource = Enum.GetValues<CrossAlignment>();
         Canvas.ViewModel = vm;
         Canvas.StyleProvider = k => _services.ToolStyles.Get(k.ToString(), DefaultStyle(k));
         Canvas.PrototypeProvider = k => _services.AnnotationStyles.Prototype(k.ToString());
-        _props = new AnnotationPropertiesPanel(services, vm, () => Canvas.Tool, k => _services.ToolStyles.Get(k.ToString(), DefaultStyle(k)));
-        AnnotationPanelHost.Content = _props;
+        _inspector = new InspectorPanel(services, vm, () => Canvas.Tool, k => _services.ToolStyles.Get(k.ToString(), DefaultStyle(k)));
+        InspectorHost.Content = _inspector;
+        _props = _inspector.AnnotationPanel;
+        _edges = _inspector.EdgePanel;
         ObjectsHost.Content = new ObjectsList(vm);
-        _edges = new ImageEdgePanel(services, vm);
-        EdgePanelHost.Content = _edges;
-        // Changes made while a panel field had focus (e.g. undo) show once focus leaves the panel.
-        _props.IsKeyboardFocusWithinChanged += (_, e) => { if (e.NewValue is false) RefreshPropsSoon(); };
+        _inspector.OutsideChanged += value => Canvas.Outside = value;
+        _inspector.SnapChanged += value => Canvas.SnapEnabled = value;
+        _inspector.CropToolRequested += () => SelectTool(ToolKind.Crop);
         Canvas.SnapEnabled = _services.Settings.SnapEnabled;
-        SnapBox.IsChecked = _services.Settings.SnapEnabled;
-        Canvas.ViewChanged += () => ZoomText.Text = $"{Canvas.Zoom:P0}";
+        Canvas.ViewChanged += () => ZoomBox.Value = Math.Round(Canvas.Zoom * 100);
         Canvas.EditTextRequested += OnEditText;
         Canvas.ViewChanged += PositionTextEditor;
         Canvas.ContextMenuOpening += OnCanvasContextMenu;
@@ -98,12 +80,13 @@ public partial class MainWindow : Window
 
         BuildToolBar();
         BuildCaptureMenus();
-        InitCanvasBar();
+        Canvas.Outside = S.OutsideCanvas;
+        InitializeUpgrade();
         GalleryMenu.IsChecked = _services.Settings.ShowCaptureGallery;
         SetGalleryVisible(_services.Settings.ShowCaptureGallery);
         SelectTool(ToolKind.Select);
 
-        vm.ErrorRaised += msg => Dialogs.Error(this, msg);
+        vm.ErrorRaised += ShowErrorToast;
         vm.PropertyChanged += OnVmPropertyChanged;
 
         Drop += OnWindowDrop;
@@ -139,18 +122,8 @@ public partial class MainWindow : Window
     private void CreateTray()
     {
         _tray?.Dispose();
-        _tray = new TrayService("SnagItOpen", [
-            new TrayMenuItem("Open editor", ShowEditor),
-            TrayMenuItem.Separator,
-            new TrayMenuItem("Capture region", () => Dispatcher.BeginInvoke(() => _ = RunCaptureAsync(CaptureMode.Region))),
-            new TrayMenuItem("Capture window", () => Dispatcher.BeginInvoke(() => _ = RunCaptureAsync(CaptureMode.Window))),
-            new TrayMenuItem("Capture all monitors", () => Dispatcher.BeginInvoke(() => _ = RunCaptureAsync(CaptureMode.AllMonitors))),
-            new TrayMenuItem("Scrolling capture", () => Dispatcher.BeginInvoke(() => OnScrolling(this, new RoutedEventArgs()))),
-            TrayMenuItem.Separator,
-            new TrayMenuItem("Settings and shortcuts…", () => Dispatcher.BeginInvoke(() => { ShowEditor(); OnSettings(this, new RoutedEventArgs()); })),
-            TrayMenuItem.Separator,
-            new TrayMenuItem("Quit SnagItOpen", () => Dispatcher.BeginInvoke(ExitApplication)),
-        ], ShowEditor);
+        _tray = new TrayService("SnagItOpen", TrayItems(), ShowEditor);
+        UpdateTray();
     }
 
     /// <summary>Registers hotkeys from settings and capture presets. Conflicts are reported, never fatal.</summary>
@@ -190,11 +163,8 @@ public partial class MainWindow : Window
     /// <summary>Shows the actually registered global shortcuts on the empty-canvas start card.</summary>
     private void UpdateStartCardKeys()
     {
-        var region = ActiveHotkeys.TryGetValue(HotkeyActions.Region, out var rg) ? rg.ToString() : "Not set";
-        var window = ActiveHotkeys.TryGetValue(HotkeyActions.Window, out var wg) ? wg.ToString() : "Not set";
-        StartRegionKey.Content = region;
-        StartRegionKeyInline.Text = region;
-        StartWindowKey.Content = window;
+        StartRegionKeyInline.Text = RegionGesture() is { Length: > 0 } gesture ? gesture : "Set shortcut";
+        UpdateGeneratedShortcuts(); UpdateTray(); RefreshCaptureSplitMenu();
     }
 
     /// <summary>Starts with no visible window: creates the window handle (hotkeys, tray) without showing it.</summary>
@@ -202,9 +172,6 @@ public partial class MainWindow : Window
     {
         new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
         if (_tray is null) CreateTray();
-        var region = ActiveHotkeys.TryGetValue(HotkeyActions.Region, out var rg) ? rg.ToString() : "the tray menu";
-        _tray?.ShowBalloon("SnagItOpen is running", $"Press {region} to capture a region.");
-        _trayHintShown = true;
     }
 
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -297,12 +264,11 @@ public partial class MainWindow : Window
 
     private void OnClosingWindow(object? sender, CancelEventArgs e)
     {
+        SaveWindowPlacement();
         if (!_exiting && S.CloseToTray && _tray is not null)
         {
             e.Cancel = true;
             Hide();
-            var region = ActiveHotkeys.TryGetValue(HotkeyActions.Region, out var rg) ? rg.ToString() : "the tray menu";
-            if (!_trayHintShown) { _tray.ShowBalloon("SnagItOpen is still running", $"Press {region} to capture a region. Right-click the tray icon and choose Quit to exit."); _trayHintShown = true; }
             return;
         }
         if (!ConfirmDiscard()) { e.Cancel = true; _exiting = false; return; }
@@ -315,7 +281,7 @@ public partial class MainWindow : Window
         _hotkeys?.Dispose();
         _tray?.Dispose();
         _services.SaveSettings(S with { SnapEnabled = Canvas.SnapEnabled });
-        Application.Current.Shutdown();
+        if (_shutdownOnClose) Application.Current.Shutdown();
     }
 
     private void ExitApplication()
@@ -329,8 +295,7 @@ public partial class MainWindow : Window
     private bool ConfirmDiscard()
     {
         if (!_vm.IsDirty || _vm.IsEmpty) return true;
-        var r = MessageBox.Show(this, "Save changes to the current composition?", "SnagItOpen",
-            MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        var r = Dialogs.Confirm(this, "SnagItOpen", "Save changes to the current composition?", "Save", "Discard", "Cancel");
         if (r == MessageBoxResult.Cancel) return false;
         if (r == MessageBoxResult.Yes) return WaitPumping(SaveAsync(forceDialog: false));
         _vm.DiscardRecovery();
@@ -377,26 +342,14 @@ public partial class MainWindow : Window
 
     // ================================================================== toolbar and tool styles
 
-    private void BuildToolBar()
-    {
-        foreach (var (kind, label, tip) in ToolDefs)
-        {
-            var b = new RadioButton { Content = label, GroupName = "tool", ToolTip = tip, Margin = new Thickness(1), Padding = new Thickness(6, 2, 6, 2) };
-            System.Windows.Automation.AutomationProperties.SetName(b, label + " tool");
-            b.Click += (_, _) => SelectTool(kind);
-            _toolButtons[kind] = b;
-            ToolsBar.Items.Add(b);
-        }
-    }
-
     private void SelectTool(ToolKind kind)
     {
         Canvas.CancelGesture();
         Canvas.Tool = kind;
-        if (_toolButtons.TryGetValue(kind, out var b)) b.IsChecked = true;
+        foreach (var (tool, button) in _allToolButtons) button.IsChecked = tool == kind;
         if (kind != ToolKind.Select && _vm.SelectedAnnotations.Count > 0) _vm.Select(_vm.SelectedImages, []);
         RefreshPropsSoon();
-        _vm.Status = ToolDefs.First(t => t.Kind == kind).Tip;
+        _vm.Status = ToolCatalog.Get(kind).Description;
     }
 
     /// <summary>Rebuilds the properties panel once per dispatcher cycle (never while a panel field has focus).</summary>
@@ -404,13 +357,7 @@ public partial class MainWindow : Window
     {
         if (_propsPending) return;
         _propsPending = true;
-        Dispatcher.BeginInvoke(() =>
-        {
-            _propsPending = false;
-            if (!_edges.IsKeyboardFocusWithin) _edges.Refresh();
-            if (_props.IsKeyboardFocusWithin) return;
-            _props.Refresh();
-        }, System.Windows.Threading.DispatcherPriority.Background);
+        Dispatcher.BeginInvoke(() => { _propsPending = false; _inspector.Refresh(); }, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private static ToolStyle DefaultStyle(ToolKind k) => k switch
@@ -427,7 +374,6 @@ public partial class MainWindow : Window
         _ => new ToolStyle(),
     };
 
-    private void OnSnapChanged(object sender, RoutedEventArgs e) => Canvas.SnapEnabled = SnapBox.IsChecked == true;
 
     // ================================================================== in-place text editing
 
@@ -455,7 +401,7 @@ public partial class MainWindow : Window
         var tb = new TextBox
         {
             Text = t.Text, AcceptsReturn = true, AcceptsTab = false, TextWrapping = TextWrapping.Wrap,
-            BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromRgb(0, 120, 215)),
+            BorderThickness = new Thickness(1),
             Padding = new Thickness(0), Foreground = new SolidColorBrush(color.ToColor()),
             Background = new SolidColorBrush(t.Fill is { A: > 0 } f ? f.ToColor() : Color.FromArgb(200, 255, 255, 255)),
             FontFamily = new FontFamily(string.IsNullOrWhiteSpace(t.FontFamily) ? "Segoe UI" : t.FontFamily),
@@ -464,6 +410,10 @@ public partial class MainWindow : Window
             TextAlignment = t.Alignment switch { TextAlign.Center => TextAlignment.Center, TextAlign.Right => TextAlignment.Right, _ => TextAlignment.Left },
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
         };
+        tb.SetResourceReference(TextBox.BorderBrushProperty, "Accent.Select");
+        if (color.A == 0) tb.SetResourceReference(TextBox.CaretBrushProperty, "Text.Primary");
+        else tb.CaretBrush = tb.Foreground;
+        TextBlock.SetLineHeight(tb, t.FontSize * 1.2 * Canvas.Zoom);
         if (t.Underline) tb.TextDecorations = TextDecorations.Underline;
         System.Windows.Automation.AutomationProperties.SetName(tb, "Annotation text. Ctrl+Enter to finish, Escape to cancel.");
         tb.PreviewKeyDown += (_, e) =>
@@ -546,10 +496,14 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (IsTyping()) return;
         var mods = Keyboard.Modifiers;
         bool ctrl = mods.HasFlag(ModifierKeys.Control), shift = mods.HasFlag(ModifierKeys.Shift);
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key == Key.F1) { OnShortcuts(this, e); e.Handled = true; return; }
+        if (key == Key.F4) { OnToggleProperties(this, e); e.Handled = true; return; }
+        if (key == Key.F6) { CycleFocusRegion(shift ? -1 : 1); e.Handled = true; return; }
+        if (key == Key.K && ctrl) { OnCommandPalette(this, e); e.Handled = true; return; }
+        if (IsTyping()) return;
         bool handled = true;
         switch (key)
         {
@@ -570,7 +524,7 @@ public partial class MainWindow : Window
             case Key.D when ctrl && _vm.SelectedAnnotations.Count > 0 && _vm.SelectedImages.Count == 0: _vm.DuplicateAnnotations(); break;
             case Key.OemPlus or Key.Add when !ctrl && _vm.SelectedAnnotations.Count > 0: _vm.AdjustStepNumbers(1); break;
             case Key.OemMinus or Key.Subtract when !ctrl && _vm.SelectedAnnotations.Count > 0: _vm.AdjustStepNumbers(-1); break;
-            case Key.Tab when !ctrl && Canvas.IsKeyboardFocusWithin && _vm.Document.Annotations.Length > 0: CycleAnnotation(shift ? -1 : 1); break;
+            case Key.Tab when !ctrl && Canvas.IsKeyboardFocusWithin && _vm.HasSelection: CycleAnnotation(shift ? -1 : 1); break;
             case Key.OemCloseBrackets when ctrl && _vm.HasSelection: _vm.ZOrder(shift ? DocumentOps.ZMove.ToFront : DocumentOps.ZMove.Forward); break;
             case Key.OemOpenBrackets when ctrl && _vm.HasSelection: _vm.ZOrder(shift ? DocumentOps.ZMove.ToBack : DocumentOps.ZMove.Backward); break;
             case Key.Z when ctrl && shift: _vm.Redo(); break;
@@ -578,21 +532,29 @@ public partial class MainWindow : Window
             case Key.Y when ctrl: _vm.Redo(); break;
             case Key.D when ctrl: _vm.Duplicate(); break;
             case Key.A when ctrl: _vm.SelectAll(); break;
+            case Key.K when ctrl: OnCommandPalette(this, e); break;
+            case Key.F1: OnShortcuts(this, e); break;
+            case Key.F4: OnToggleProperties(this, e); break;
+            case Key.F6: CycleFocusRegion(shift ? -1 : 1); break;
+            case Key.D2 or Key.NumPad2 when ctrl: Canvas.ZoomToSelection(); break;
             case Key.D0 or Key.NumPad0 when ctrl: Canvas.FitToView(); break;
             case Key.D1 or Key.NumPad1 when ctrl: Canvas.ZoomTo(1); break;
             case Key.OemPlus or Key.Add when ctrl: Canvas.ZoomBy(1.25); break;
             case Key.OemMinus or Key.Subtract when ctrl: Canvas.ZoomBy(0.8); break;
+            case Key.L when ctrl && !ObjectsHost.IsKeyboardFocusWithin: OpenLibrary(); break;
             case Key.Delete: _vm.RemoveSelected(); break;
             case Key.Escape:
-                if (!Canvas.CancelGesture())
+                if (PropertiesFlyout.IsOpen) { PropertiesFlyout.IsOpen = false; break; }
+                if (Canvas.CancelGesture()) break;
+                if (_vm.HasSelection) { _vm.ClearSelection(); break; }
+                if (Canvas.Tool != ToolKind.Select)
                 {
-                    if (Canvas.Tool != ToolKind.Select) SelectTool(ToolKind.Select);
-                    else _vm.ClearSelection();
+                    SelectTool(ToolKind.Select);
                 }
                 break;
             case Key.Up or Key.Down when mods == ModifierKeys.Alt && _vm.PrimaryImage is { } id:
                 _vm.MoveInOrder(id, key == Key.Up ? -1 : 1); break;
-            case Key.Left or Key.Right or Key.Up or Key.Down when !ImageList.IsKeyboardFocusWithin && _vm.HasSelection && !ctrl:
+            case Key.Left or Key.Right or Key.Up or Key.Down when Canvas.IsKeyboardFocusWithin && _vm.HasSelection && !ctrl:
                 {
                     int step = shift ? 10 : 1;
                     _vm.Nudge(key == Key.Left ? -step : key == Key.Right ? step : 0, key == Key.Up ? -step : key == Key.Down ? step : 0);
@@ -628,11 +590,13 @@ public partial class MainWindow : Window
 
     private void CycleAnnotation(int dir)
     {
-        var anns = _vm.Document.Annotations;
-        int cur = _vm.PrimaryAnnotation is { } a ? Array.FindIndex(anns, x => x.Id == a.Id) : -1;
-        int next = cur < 0 ? (dir > 0 ? 0 : anns.Length - 1) : ((cur + dir) % anns.Length + anns.Length) % anns.Length;
-        _vm.Select([], [anns[next].Id]);
-        _vm.Status = $"{anns[next].Kind} {next + 1} of {anns.Length} selected (Tab / Shift+Tab to move).";
+        var doc = _vm.Document;
+        var objects = doc.Images.Where(i => i.Visible).Select(i => i.Id).Concat(doc.Annotations.Where(a => !a.Hidden).Select(a => a.Id)).ToArray();
+        if (objects.Length == 0) return;
+        int cur = Array.FindIndex(objects, id => _vm.SelectedImages.Contains(id) || _vm.SelectedAnnotations.Contains(id));
+        int next = cur < 0 ? (dir > 0 ? 0 : objects.Length - 1) : (cur + dir + objects.Length) % objects.Length;
+        if (doc.FindImage(objects[next]) is not null) _vm.Select([objects[next]]); else _vm.Select([], [objects[next]]);
+        _vm.Status = $"Object {next + 1} of {objects.Length} selected (Tab / Shift+Tab to move).";
     }
 
     private void OnCanvasContextMenu(object sender, ContextMenuEventArgs e)
@@ -698,15 +662,8 @@ public partial class MainWindow : Window
 
     private bool ToolShortcut(Key key)
     {
-        ToolKind? t = key switch
-        {
-            Key.V => ToolKind.Select, Key.C => ToolKind.Crop, Key.A => ToolKind.Arrow, Key.L => ToolKind.Line,
-            Key.R => ToolKind.Rectangle, Key.E => ToolKind.Ellipse, Key.T => ToolKind.Text, Key.H => ToolKind.Highlight,
-            Key.N => ToolKind.Step, Key.P => ToolKind.Freehand, _ => null,
-        };
-        if (t is null) return false;
-        SelectTool(t.Value);
-        return true;
+        if (ToolCatalog.ForKey(key) is not { } tool) return false;
+        SelectTool(tool.Kind); return true;
     }
 
     private void OnPreviewKeyUp(object sender, KeyEventArgs e)
@@ -742,7 +699,7 @@ public partial class MainWindow : Window
             if (data is null) return;
             // Our own window must not accept its own export.
             _ignoreSelfDrop = true;
-            try { DragDrop.DoDragDrop(DragOutHandle, data, DragDropEffects.Copy); }
+            try { DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Copy); }
             finally { _ignoreSelfDrop = false; }
         }
         finally { _dragOutBusy = false; }
@@ -758,7 +715,7 @@ public partial class MainWindow : Window
     private bool _ignoreSelfDrop;
 
     /// <summary>Renders the export area to a PNG in the app temp folder and wraps it as file + PNG + bitmap data.</summary>
-    private async Task<DataObject?> BuildDragOutDataAsync()
+    private async Task<DataObject?> BuildDragOutDataAsync(bool clipboardFile = false)
     {
         if (!_vm.HasContent) { _vm.Status = "Nothing to drag yet."; return null; }
         try
@@ -767,7 +724,7 @@ public partial class MainWindow : Window
             var png = await _services.Imaging.InvokeAsync(px.EncodePng);
             var bg = _vm.Document.Background.A == 255 ? _vm.Document.Background : Rgba32.White;
             var opaque = await _services.Imaging.InvokeAsync(() => px.FlattenOnto(bg).ToBitmap());
-            var dir = Path.Combine(_services.Paths.Temp, "dragout");
+            var dir = Path.Combine(clipboardFile ? _services.Paths.Cache : _services.Paths.Temp, clipboardFile ? "clip" : "dragout");
             Directory.CreateDirectory(dir);
             CleanupDragOut(dir);
             var baseName = _vm.ProjectPath is { } pp ? Path.GetFileNameWithoutExtension(pp) : "SnagItOpen " + DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss");
@@ -984,7 +941,8 @@ public partial class MainWindow : Window
         try
         {
             var px = await _services.Export.RenderAsync(_vm.Document);
-            new PinnedImageWindow(px.ToBitmap(), _vm.Document.Name).Show();
+            new PinnedImageWindow(px.ToBitmap(), _vm.Document.Name, _services, ShowEditor).Show();
+            _vm.Notify(NotificationKind.Success, "Pinned");
         }
         catch (InvalidOperationException ex) { _vm.Status = ex.Message; }
     }
@@ -995,7 +953,7 @@ public partial class MainWindow : Window
     {
         var open = OwnedWindows.OfType<LibraryWindow>().FirstOrDefault();
         if (open is not null) { open.Activate(); return; }
-        new LibraryWindow(_services, _vm) { Owner = this }.Show();
+        new LibraryWindow(_services, _vm, () => OpenSettingsPage("Output & library")) { Owner = this }.Show();
     }
 
     private void OnToggleGallery(object sender, RoutedEventArgs e)
@@ -1011,15 +969,7 @@ public partial class MainWindow : Window
         GalleryHost.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void OnSettings(object sender, RoutedEventArgs e)
-    {
-        var w = new SettingsWindow(_services) { Owner = this };
-        if (w.ShowDialog() != true) return;
-        ApplyHotkeys();
-        if (S.ShowTrayIcon && _tray is null) CreateTray();
-        else if (!S.ShowTrayIcon && _tray is not null) { _tray.Dispose(); _tray = null; }
-        BuildCaptureMenus();
-    }
+    private void OnSettings(object sender, RoutedEventArgs e) => OpenSettingsPage("General");
 
     private void OnExit(object sender, RoutedEventArgs e) => ExitApplication();
 
@@ -1083,121 +1033,16 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { Dialogs.Error(this, ex.Message); }
     }
 
-    private void OnCanvasSize(object sender, RoutedEventArgs e)
-    {
-        var a = _vm.Document.ExportArea;
-        var text = Dialogs.Prompt(this, "Canvas size", "Canvas rectangle in document pixels (x, y, width, height). Content is not moved or scaled:", $"{a.X}, {a.Y}, {a.Width}, {a.Height}");
-        if (text is null) return;
-        var parts = text.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 4 || !parts.All(p => int.TryParse(p, out _))) { _vm.Status = "Enter four whole numbers: x, y, width, height."; return; }
-        var n = parts.Select(int.Parse).ToArray();
-        _vm.SetCanvas(new PixelRect(n[0], n[1], n[2], n[3]));
-        FitSoon();
-    }
-
-    // ================================================================== canvas bar (auto / locked)
-
-    private static readonly (string Name, int W, int H)[] CanvasPresets =
-    [
-        ("Current size", 0, 0), ("1920 × 1080", 1920, 1080), ("1280 × 720", 1280, 720),
-        ("1080 × 1080", 1080, 1080), ("800 × 600", 800, 600),
-    ];
-    private bool _canvasBarSync;
-
-    private void InitCanvasBar()
-    {
-        CanvasPresetBox.ItemsSource = CanvasPresets.Select(p => p.Name).ToList();
-        OutsideBox.ItemsSource = Enum.GetValues<OutsideCanvasMode>();
-        OutsideBox.SelectedItem = S.OutsideCanvas;
-        Canvas.Outside = S.OutsideCanvas;
-        SyncCanvasBar();
-    }
-
-    /// <summary>Reflects the document's canvas state in the bar and the content-outside warning.</summary>
-    private void SyncCanvasBar()
-    {
-        _canvasBarSync = true;
-        try
-        {
-            var d = _vm.Document;
-            CanvasAutoBtn.IsChecked = d.AutoCanvas;
-            CanvasLockBtn.IsChecked = !d.AutoCanvas;
-            if (!CanvasWBox.IsKeyboardFocusWithin) CanvasWBox.Text = d.ExportArea.Width.ToString(CultureInfo.CurrentCulture);
-            if (!CanvasHBox.IsKeyboardFocusWithin) CanvasHBox.Text = d.ExportArea.Height.ToString(CultureInfo.CurrentCulture);
-            CanvasPresetBox.SelectedIndex = -1;
-            OutsideWarning.Visibility = !d.AutoCanvas && DocumentBounds.HasContentOutside(d) ? Visibility.Visible : Visibility.Collapsed;
-        }
-        finally { _canvasBarSync = false; }
-    }
-
-    private void OnCanvasAuto(object sender, RoutedEventArgs e)
-    {
-        if (_canvasBarSync || _vm.Document.AutoCanvas) return;
-        _vm.FitCanvas();
-        FitSoon();
-    }
-
-    private void OnCanvasLock(object sender, RoutedEventArgs e)
-    {
-        if (_canvasBarSync || !_vm.Document.AutoCanvas) return;
-        _vm.SetCanvas(_vm.Document.ExportArea);
-        _vm.Status = "Canvas locked. Anything outside the dotted border is not exported; drag the border or its handles to change it.";
-    }
-
-    private void OnCanvasSizeKey(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) { OnCanvasSizeCommit(sender, e); e.Handled = true; }
-        else if (e.Key == Key.Escape) { SyncCanvasBar(); Canvas.Focus(); e.Handled = true; }
-    }
-
-    private void OnCanvasSizeCommit(object sender, RoutedEventArgs e)
-    {
-        if (_canvasBarSync) return;
-        var a = _vm.Document.ExportArea;
-        if (!int.TryParse(CanvasWBox.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out var w) ||
-            !int.TryParse(CanvasHBox.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out var h) ||
-            w < 1 || h < 1 || w > Limits.MaxDimension || h > Limits.MaxDimension)
-        {
-            _vm.Status = $"Canvas width and height must be 1–{Limits.MaxDimension} px.";
-            SyncCanvasBar();
-            return;
-        }
-        if (w == a.Width && h == a.Height) return;
-        SetCanvasSizeCentered(w, h);
-    }
-
-    /// <summary>Locks the canvas at a new size, keeping its centre where it is.</summary>
-    private void SetCanvasSizeCentered(int w, int h)
-    {
-        var a = _vm.Document.ExportArea;
-        int x = a.X + (a.Width - w) / 2, y = a.Y + (a.Height - h) / 2;
-        _vm.SetCanvas(new PixelRect(x, y, w, h));
-        FitSoon();
-    }
-
-    private void OnCanvasPreset(object sender, SelectionChangedEventArgs e)
-    {
-        if (_canvasBarSync || CanvasPresetBox.SelectedIndex < 0) return;
-        var p = CanvasPresets[CanvasPresetBox.SelectedIndex];
-        if (p.W == 0) OnCanvasLock(sender, e);
-        else SetCanvasSizeCentered(p.W, p.H);
-        SyncCanvasBar();
-    }
-
-    private void OnOutsideMode(object sender, SelectionChangedEventArgs e)
-    {
-        if (_canvasBarSync || OutsideBox.SelectedItem is not OutsideCanvasMode m) return;
-        Canvas.Outside = m;
-        _services.SaveSettings(S with { OutsideCanvas = m });
-    }
+    private void OnCanvasSize(object sender, RoutedEventArgs e) { SelectTool(ToolKind.Select); ShowInspector(); _inspector.ShowCanvasSection(); }
+    private void SyncCanvasBar() => RefreshCanvasWarnings();
 
     private void OnScaleDocument(object sender, RoutedEventArgs e)
     {
-        var text = Dialogs.Prompt(this, "Scale document", "Scale content and canvas by percent (e.g. 50 or 200):", "100");
-        if (text is null) return;
-        if (!double.TryParse(text.Trim().TrimEnd('%'), out var pct) || pct is < 1 or > 1000) { _vm.Status = "Enter a percentage between 1 and 1000."; return; }
-        if (Math.Abs(pct - 100) < 1e-9) return;
-        _vm.ScaleDocument(pct / 100);
+        var area = _vm.Document.ExportArea;
+        var request = ScaleDialog.Show(this, area.Width, area.Height);
+        if (request is null) return;
+        if (request.ScaleContent) _vm.Commit("Scale document", d => DocumentOps.ScaleDocument(d, request.FactorX, request.FactorY));
+        else _vm.Commit("Resize canvas", d => DocumentOps.SetExportArea(d, d.ExportArea with { Width = request.Width, Height = request.Height }));
         FitSoon();
     }
 
@@ -1208,7 +1053,7 @@ public partial class MainWindow : Window
         if (sel.Count != 2) { Dialogs.Info(this, "Select exactly two images to join. The first in combine order stays; repeated rows/columns are removed from the second."); return; }
         var axis = doc.Layout.Mode == LayoutMode.Horizontal ? SeamAxis.Horizontal : SeamAxis.Vertical;
         var (first, second) = (sel[0], sel[1]);
-        string suggestion = "0";
+        int suggestion = 1;
         string note = "";
         if (axis == SeamAxis.Vertical && first.HasIdentityOrientation && second.HasIdentityOrientation && first.SourceCrop.Width == second.SourceCrop.Width)
         {
@@ -1217,19 +1062,23 @@ public partial class MainWindow : Window
                 var a = _services.Cache.GetPixels(first.AssetId).Crop(first.SourceCrop).ToLuma();
                 var b = _services.Cache.GetPixels(second.AssetId).Crop(second.SourceCrop with { Y = 0, Height = second.SourceCrop.Bottom }).ToLuma();
                 var s = OverlapMatcher.FindVertical(a, b);
-                suggestion = s.Overlap.ToString();
+                suggestion = Math.Max(1, s.Overlap);
                 note = s.IsConfident ? $"\nSuggested overlap: {s.Overlap} rows (match error {s.Error:0.000})." : $"\nNo confident suggestion ({s.Confidence}); check the result.";
             }
             catch (Exception ex) when (ex is AssetNotFoundException or ArgumentException) { }
         }
         var what = axis == SeamAxis.Vertical ? "rows" : "columns";
-        var text = Dialogs.Prompt(this, "Join overlapping images", $"Repeated {what} to remove from the start of the second image:{note}", suggestion);
-        if (text is null) return;
-        if (!int.TryParse(text, out var overlap)) { _vm.Status = "Enter a whole number."; return; }
         var baseSecond = second with
         {
             SourceCrop = axis == SeamAxis.Vertical ? second.SourceCrop with { Y = 0, Height = second.SourceCrop.Bottom } : second.SourceCrop with { X = 0, Width = second.SourceCrop.Right },
         };
+        int available = axis == SeamAxis.Vertical ? baseSecond.SourceCrop.Height : baseSecond.SourceCrop.Width;
+        var result = SeamDialog.Show(this, available, suggestion, renderPreview: n =>
+        {
+            try { return _services.Renderer.RenderThumbnail(SeamGeometry.Join(doc, first.Id, second.Id, axis, n), 480); }
+            catch (ArgumentException) { return null; }
+        }, note: note.Trim(), beforePreview: _services.Renderer.RenderThumbnail(doc, 480));
+        if (result is not { } overlap) return;
         if (SeamGeometry.Validate(first, baseSecond, axis, overlap) is { } err) { Dialogs.Error(this, err); return; }
         if (_vm.Commit("Join images", d => SeamGeometry.Join(d, first.Id, second.Id, axis, overlap)))
             _vm.Status = $"Joined with {overlap} overlapping {what} removed. Originals stay editable (crop or undo to adjust).";
@@ -1279,10 +1128,7 @@ public partial class MainWindow : Window
 
     private async Task CutOutFlattenedAsync(RectD strip, bool rows)
     {
-        var r = MessageBox.Show(this,
-            "This area includes annotations, effects or a rotated image, which cannot be remapped across a removed strip.\n\nCreate a flattened copy of the composition with the strip removed? The original stays editable.",
-            "Create flattened copy and cut out", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-        if (r != MessageBoxResult.OK) return;
+        if (Dialogs.Confirm(this, "Create flattened copy and cut out", "This operation creates a flattened copy. The original images and annotations remain available through Undo.", "Create copy") != MessageBoxResult.Yes) return;
         var doc = _vm.Document;
         var area = doc.ExportArea;
         var s = strip.ToPixelRectRounded().Intersect(area);
@@ -1343,54 +1189,85 @@ public partial class MainWindow : Window
     private void OnCaptureFreehand(object sender, RoutedEventArgs e) => _ = RunCaptureAsync(CaptureMode.Region, BaseOptions() with { Shape = CaptureShape.Freehand });
     private void OnCaptureMulti(object sender, RoutedEventArgs e) => _ = RunCaptureAsync(CaptureMode.MultiRegion);
 
-    private void OnCaptureFixed(object sender, RoutedEventArgs e)
-    {
-        var text = Dialogs.Prompt(this, "Fixed-size capture", "Size in physical pixels (width x height):", "640x480");
-        if (text is null) return;
-        var p = text.ToLowerInvariant().Split(['x', '×', ',', ' '], StringSplitOptions.RemoveEmptyEntries);
-        if (p.Length != 2 || !int.TryParse(p[0], out var w) || !int.TryParse(p[1], out var h) || w < 1 || h < 1 || !Limits.IsAcceptableImageSize(w, h))
-        { _vm.Status = "Enter a size such as 640x480."; return; }
-        _ = RunCaptureAsync(CaptureMode.Region, BaseOptions() with { Constraint = new SelectionConstraint { FixedSize = new PixelSize(w, h) } });
-    }
+    private void OnCaptureFixed(object sender, RoutedEventArgs e) => _ = RunCaptureAsync(CaptureMode.Region, pickerAspect: false);
+    private void OnCaptureAspect(object sender, RoutedEventArgs e) => _ = RunCaptureAsync(CaptureMode.Region, pickerAspect: true);
 
-    private void OnCaptureAspect(object sender, RoutedEventArgs e)
-    {
-        var text = Dialogs.Prompt(this, "Fixed aspect capture", "Aspect ratio (width:height):", "16:9");
-        if (text is null) return;
-        var p = text.Split([':', '/', 'x', ' '], StringSplitOptions.RemoveEmptyEntries);
-        if (p.Length != 2 || !double.TryParse(p[0], out var a) || !double.TryParse(p[1], out var b) || a <= 0 || b <= 0 || a / b is < 0.01 or > 100)
-        { _vm.Status = "Enter a ratio such as 16:9."; return; }
-        _ = RunCaptureAsync(CaptureMode.Region, BaseOptions() with { Constraint = new SelectionConstraint { AspectRatio = a / b } });
-    }
-
-    /// <summary>Runs one capture and routes it into the composition. Never changes anything on cancel.</summary>
-    public async Task RunCaptureAsync(CaptureMode mode, CaptureOptions? options = null, CapturePreset? preset = null)
+    /// <summary>Captures first, then routes the result after every overlay has closed.</summary>
+    public async Task RunCaptureAsync(CaptureMode mode, CaptureOptions? options = null, CapturePreset? preset = null, bool? pickerAspect = null)
     {
         if (_capture.IsBusy) return;
         Canvas.CancelGesture();
+        bool hidden = !IsVisible;
         var o = options ?? BaseOptions();
-        var outcome = await _capture.CaptureAsync(mode, o);
+        var outcome = pickerAspect is { } aspect
+            ? await _capture.CaptureWithPickerAsync(aspect, o)
+            : await _capture.CaptureAsync(mode, o);
         if (outcome.Status == CaptureStatus.Canceled) { _vm.Status = "Capture canceled."; return; }
-        if (outcome.Status == CaptureStatus.Failed)
+        if (outcome.Status == CaptureStatus.Failed) { ShowErrorToast(outcome.Message ?? "Capture failed."); return; }
+        if (outcome.Items.Count == 0) return;
+        var action = outcome.Action;
+        var destination = action switch
         {
-            _vm.Status = outcome.Message;
-            if (IsVisible) Dialogs.Error(this, outcome.Message ?? "Capture failed.");
-            else _tray?.ShowBalloon("Capture failed", outcome.Message ?? "");
-            return;
+            CaptureOverlayAction.Copy => CaptureDestination.CopyOnly,
+            CaptureOverlayAction.AppendBelow => CaptureDestination.AppendBelow,
+            CaptureOverlayAction.AppendRight => CaptureDestination.AppendRight,
+            _ => o.Destination,
+        };
+        bool outputOnly = action is CaptureOverlayAction.Save or CaptureOverlayAction.Pin or CaptureOverlayAction.Drag;
+        bool added = false;
+        string? outputPath = null;
+        if (outputOnly)
+        {
+            try { await _vm.StoreCapturesAsync(outcome.Items); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { ShowErrorToast(ex.Message); return; }
         }
-        bool vertical = o.Destination != CaptureDestination.AppendRight;
-        bool added = await _vm.AddCapturesAsync(outcome.Items, o.Destination, vertical);
-        if (preset is not null) await QuickOutputAsync(preset, outcome.Items);
+        else added = await _vm.AddCapturesAsync(outcome.Items, destination, destination != CaptureDestination.AppendRight);
+        if (!outputOnly && !_vm.LastCaptureSucceeded) return;
+        if (action == CaptureOverlayAction.Save) outputPath = await SaveCapturedImageAsync(outcome.Items[0]);
+        else if (action == CaptureOverlayAction.Pin) PinCapture(outcome.Items[0]);
+        if (preset is not null) outputPath = await QuickOutputAsync(preset, outcome.Items);
         else if (added && S.CopyAfterCapture) await _vm.CopyImageAsync();
-        if (added)
+        if (added) { ShowEditor(); FitSoon(); }
+        else if ((action == CaptureOverlayAction.Drag || S.DesktopToasts && hidden) && _vm.StatusKind != NotificationKind.Error && !(action == CaptureOverlayAction.Save && outputPath is null))
         {
-            ShowEditor();
-            FitSoon();
+            var item = outcome.Items[0];
+            string title = action == CaptureOverlayAction.Drag ? "Drag the capture to another app" : outputPath is not null ? "Saved to " + Path.GetFileName(outputPath) : action == CaptureOverlayAction.Pin ? "Pinned" : "Copied to clipboard";
+            var toast = new DesktopToastWindow(_services, item, title,
+                () => _ = EditCaptureAsync(item), () => PinCapture(item), outputPath);
+            toast.Show();
+            if (action == CaptureOverlayAction.Drag && Mouse.LeftButton == MouseButtonState.Pressed) toast.BeginDrag();
         }
+        UpdateRecentProjects();
     }
 
-    private async Task QuickOutputAsync(CapturePreset preset, IReadOnlyList<CaptureItem> items)
+    private async Task EditCaptureAsync(CaptureItem item)
     {
+        var destination = S.DefaultDestination == CaptureDestination.CopyOnly ? CaptureDestination.AddToCanvas : S.DefaultDestination;
+        await _vm.AddCapturesAsync([item], destination); ShowEditor(); FitSoon();
+    }
+    private void PinCapture(CaptureItem item)
+    {
+        new PinnedImageWindow(item.Pixels.ToBitmap(), "Capture", _services, () => _ = EditCaptureAsync(item)).Show();
+        _vm.Notify(NotificationKind.Success, "Pinned");
+    }
+    private async Task<string?> SaveCapturedImageAsync(CaptureItem item)
+    {
+        var dialog = new SaveFileDialog { Filter = "PNG image|*.png", FileName = "Capture.png", AddExtension = true, InitialDirectory = S.LastExportDirectory ?? "" };
+        if (dialog.ShowDialog(IsVisible ? this : null) != true) return null;
+        try
+        {
+            var png = await _services.Imaging.InvokeAsync(item.Pixels.EncodePng);
+            await File.WriteAllBytesAsync(dialog.FileName, png);
+            _services.SaveSettings(S with { LastExportDirectory = Path.GetDirectoryName(dialog.FileName) });
+            _vm.Notify(NotificationKind.Success, "Saved capture", Path.GetFileName(dialog.FileName), new NotificationAction("Show in folder", () => ShowInFolder(dialog.FileName)));
+            return dialog.FileName;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowErrorToast(ex.Message); return null; }
+    }
+
+    private async Task<string?> QuickOutputAsync(CapturePreset preset, IReadOnlyList<CaptureItem> items)
+    {
+        string? lastPath = null;
         if (preset.OutputFolder is not null)
         {
             try
@@ -1402,12 +1279,13 @@ public partial class MainWindow : Window
                     var bytes = await _services.Imaging.InvokeAsync(() => preset.OutputFormat == QuickOutputFormat.Jpeg
                         ? it.Pixels.EncodeJpeg(S.JpegQuality, Rgba32.White) : it.Pixels.EncodePng());
                     await using (var fs = new FileStream(path, FileMode.CreateNew, FileAccess.Write)) await fs.WriteAsync(bytes);
-                    _vm.Status = $"Saved {Path.GetFileName(path)}.";
+                    _vm.Status = $"Saved {Path.GetFileName(path)}."; lastPath = path;
+                    _vm.Notify(NotificationKind.Success, "Saved capture", Path.GetFileName(path), new NotificationAction("Show in folder", () => ShowInFolder(path)));
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                _vm.Status = $"Quick output failed: {ex.Message}";
+                ShowErrorToast($"Quick output failed: {ex.Message}");
             }
         }
         if (preset.CopyToClipboard && items.Count > 0)
@@ -1416,8 +1294,9 @@ public partial class MainWindow : Window
             var png = await _services.Imaging.InvokeAsync(px.EncodePng);
             var opaque = await _services.Imaging.InvokeAsync(() => px.FlattenOnto(Rgba32.White).ToBitmap());
             var r = await _services.Clipboard.CopyImageAsync(opaque, png);
-            if (!r.IsSuccess) _vm.Status = r.Message;
+            if (!r.IsSuccess) ShowErrorToast(r.Message ?? "Copy failed.");
         }
+        return lastPath;
     }
 
     private Task RunPresetAsync(CapturePreset p)
@@ -1441,38 +1320,8 @@ public partial class MainWindow : Window
             CapturePresetsMenu.Items.Add(mi);
         }
         if (CapturePresetsMenu.Items.Count > 0) CapturePresetsMenu.Items.Add(new Separator());
-        var save = new MenuItem { Header = "Save current capture settings as preset…" };
-        save.Click += (_, _) => SaveCapturePreset();
-        CapturePresetsMenu.Items.Add(save);
-        var edit = new MenuItem { Header = "Edit presets file (output folder, hotkeys)…" };
-        edit.Click += (_, _) => EditPresetsFile();
-        CapturePresetsMenu.Items.Add(edit);
-        var reload = new MenuItem { Header = "Reload presets" };
-        reload.Click += (_, _) => { _services.CapturePresets.Load(); ApplyHotkeys(); _vm.Status = _services.CapturePresets.LastWarning ?? $"Loaded {_services.CapturePresets.Presets.Count} capture presets."; };
-        CapturePresetsMenu.Items.Add(reload);
-    }
-
-    private void SaveCapturePreset()
-    {
-        var name = Dialogs.Prompt(this, "Capture preset", "Preset name (uses the current delay, cursor and destination for a region capture):");
-        if (name is null) return;
-        var list = _services.CapturePresets.Presets.Where(p => !string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
-        list.Add(new CapturePreset
-        {
-            Name = name.Trim(), Mode = CaptureMode.Region, DelaySeconds = S.CaptureDelaySeconds,
-            IncludeCursor = S.IncludeCursor, Destination = S.DefaultDestination,
-        });
-        try { _services.CapturePresets.Save(list); _vm.Status = $"Saved capture preset '{name.Trim()}'."; }
-        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { Dialogs.Error(this, ex.Message); }
-    }
-
-    private void EditPresetsFile()
-    {
-        var path = _services.Paths.CapturePresets;
-        if (!File.Exists(path)) _services.CapturePresets.Save(_services.CapturePresets.Presets);
-        try { Process.Start(new ProcessStartInfo("notepad.exe", $"\"{path}\"") { UseShellExecute = false }); }
-        catch (System.ComponentModel.Win32Exception ex) { Dialogs.Error(this, ex.Message); }
-        _vm.Status = "Edit the presets file, save it, then choose Reload presets. Fields: name, mode, delaySeconds, destination, hotkey, outputFolder, fileNameTemplate, outputFormat, copyToClipboard.";
+        var edit = new MenuItem { Header = "Manage capture presets…" };
+        edit.Click += (_, _) => OpenSettingsPage("Capture"); CapturePresetsMenu.Items.Add(edit);
     }
 
     private void OnScrolling(object sender, RoutedEventArgs e)
@@ -1484,12 +1333,9 @@ public partial class MainWindow : Window
     private void OnInterval(object sender, RoutedEventArgs e)
     {
         if (_capture.IsBusy || IntervalCaptureWindow.IsOpen) return;
-        var text = Dialogs.Prompt(this, "Interval capture", "Seconds between captures (1–60) and maximum frames (1–100):", "5, 20");
-        if (text is null) return;
-        var p = text.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries);
-        if (p.Length != 2 || !int.TryParse(p[0], out var sec) || !int.TryParse(p[1], out var max) || sec is < 1 or > 60 || max is < 1 or > 100)
-        { _vm.Status = "Enter an interval of 1–60 seconds and 1–100 frames, e.g. 5, 20."; return; }
-        new IntervalCaptureWindow(_services, _capture, _vm, this, TimeSpan.FromSeconds(sec), max).Start();
+        var request = IntervalDialog.Show(this, S.DefaultDestination);
+        if (request is null) return;
+        new IntervalCaptureWindow(_services, _capture, _vm, this, TimeSpan.FromSeconds(request.Seconds), request.Frames, request.Destination).Start();
     }
 
     // ================================================================== view and help
@@ -1501,25 +1347,23 @@ public partial class MainWindow : Window
 
     private void OnShortcuts(object sender, RoutedEventArgs e)
     {
-        var hk = string.Join("\n", ActiveHotkeys.Select(kv => $"  {kv.Value}   {kv.Key}"));
-        Dialogs.Info(this,
-            "Editor\n" +
-            "  Ctrl+O import · Ctrl+Shift+O open project · Ctrl+S save · Ctrl+Shift+S save as\n" +
-            "  Ctrl+V paste · Ctrl+Shift+C copy image · Ctrl+E export\n" +
-            "  Ctrl+Z undo · Ctrl+Y redo · Ctrl+D duplicate · Delete remove · Ctrl+A select all\n" +
-            "  Arrows nudge 1 px (Shift: 10 px) · Alt+Up/Down reorder · F2 rename (image list)\n" +
-            "  Ctrl+wheel zoom · Space+drag or middle-drag pan · Ctrl+0 fit · Ctrl+1 100%\n" +
-            "  Shift while resizing unlocks aspect · Alt while moving disables snapping · Esc cancels\n" +
-            "  Tools: V select, C crop, A arrow, L line, R rectangle, E ellipse, T text, H highlight, N step, P pen\n\n" +
-            "Capture selection\n" +
-            "  Drag or click a window · arrows move 1 px (Shift: 10) · Space press/release · Enter confirm · Esc cancel\n\n" +
-            "Global hotkeys\n" + (hk.Length == 0 ? "  (none registered)" : hk));
+        RefreshCommandRegistry();
+        var entries = _commands.All.Where(c => c.Gesture.Length > 0).Select(c => new ShortcutEntry(c.Category, c.Title, c.Gesture)).ToList();
+        entries.AddRange(ActiveHotkeys.Select(kv => new ShortcutEntry("Capture global", kv.Key, kv.Value.ToString())));
+        entries.AddRange(new[]
+        {
+            new ShortcutEntry("Canvas", "Pan", "Space+drag / middle-drag"),
+            new ShortcutEntry("Canvas", "Zoom", "Ctrl+wheel"),
+            new ShortcutEntry("Canvas", "Cycle selected objects", "Tab / Shift+Tab"),
+            new ShortcutEntry("Canvas", "Disable snapping", "Alt+drag"),
+            new ShortcutEntry("Capture overlay", "Edit / Copy / Save / Pin", "Enter / Ctrl+C / Ctrl+S / Ctrl+P"),
+            new ShortcutEntry("Capture overlay", "Switch mode", "1–6"),
+            new ShortcutEntry("Capture overlay", "Nudge selection / edge", "Arrows / Ctrl+Arrows (Shift: 10 px)"),
+            new ShortcutEntry("Capture overlay", "Copy pixel hex / RGB; loupe", "C / Shift+C; M"),
+            new ShortcutEntry("View", "Cycle regions", "F6 / Shift+F6"),
+        });
+        new ShortcutsWindow(this, entries, () => OpenSettingsPage("Shortcuts")).Show();
     }
 
-    private void OnAbout(object sender, RoutedEventArgs e) =>
-        Dialogs.Info(this, $"SnagItOpen {typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}\n\n" +
-            "Local screen capture and image combining for Windows. Everything stays on this computer.\n" +
-            "Not affiliated with TechSmith.\n\n" +
-            $"Data folder: {_services.Paths.Root}\n" +
-            $"Capture history: {_services.History.Entries.Count} items, {_services.History.TotalBytes / (1024.0 * 1024):0.0} MiB");
+    private void OnAbout(object sender, RoutedEventArgs e) => new AboutWindow(this, _services.Paths.Root).ShowDialog();
 }

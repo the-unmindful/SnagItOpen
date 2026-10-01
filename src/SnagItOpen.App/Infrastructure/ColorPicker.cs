@@ -27,22 +27,19 @@ public static class ColorPicker
         new(0, 0, 0, 255), new(90, 90, 90, 255), new(170, 170, 170, 255), new(230, 230, 230, 255), new(255, 255, 255, 255),
     ];
 
-    private static Brush? _checker;
-
     /// <summary>Checkerboard used behind translucent colours.</summary>
     public static Brush Checker
     {
         get
         {
-            if (_checker is not null) return _checker;
             var g = new DrawingGroup();
-            g.Children.Add(new GeometryDrawing(Brushes.White, null, new RectangleGeometry(new Rect(0, 0, 8, 8))));
-            var dark = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
+            g.Children.Add(new GeometryDrawing(Application.Current?.TryFindResource("Checker.A") as Brush ?? SystemColors.WindowBrush, null, new RectangleGeometry(new Rect(0, 0, 8, 8))));
+            var dark = Application.Current?.TryFindResource("Checker.B") as Brush ?? SystemColors.ControlBrush;
             g.Children.Add(new GeometryDrawing(dark, null, new RectangleGeometry(new Rect(0, 0, 4, 4))));
             g.Children.Add(new GeometryDrawing(dark, null, new RectangleGeometry(new Rect(4, 4, 4, 4))));
             var b = new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 8, 8), ViewportUnits = BrushMappingMode.Absolute };
             b.Freeze();
-            return _checker = b;
+            return b;
         }
     }
 
@@ -52,11 +49,14 @@ public static class ColorPicker
         var inner = new Border { Background = c is { } v ? new SolidColorBrush(v.ToColor()) : Brushes.Transparent };
         if (c is null)
             inner.Child = new Line { X1 = 1, Y1 = size - 3, X2 = size - 3, Y2 = 1, Stroke = Brushes.Red, StrokeThickness = 1.5 };
-        return new Border
+        var chip = new Border
         {
-            Width = size, Height = size, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1),
-            Background = c is { A: < 255 } ? Checker : Brushes.White, Child = inner,
+            Width = size, Height = size, BorderThickness = new Thickness(1),
+            Background = c is { A: < 255 } ? Checker : Brushes.Transparent, Child = inner,
         };
+        chip.SetResourceReference(Border.BorderBrushProperty, "Stroke.Control");
+        if (c is null) chip.SetResourceReference(Border.BackgroundProperty, "Bg.Surface");
+        return chip;
     }
 
     public static void Open(FrameworkElement anchor, Rgba32? initial, bool allowNone, IReadOnlyList<Rgba32> recent,
@@ -73,6 +73,7 @@ public static class ColorPicker
                 Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 8, ShadowDepth = 2, Opacity = 0.35 },
             },
         };
+        if (popup.Child is Border frame) { frame.SetResourceReference(Border.BackgroundProperty, "Bg.Surface"); frame.SetResourceReference(Border.BorderBrushProperty, "Stroke.Control"); }
         bool canceled = false;
         view.Changed += c => preview(c);
         view.Done += ok => { canceled = !ok; popup.IsOpen = false; };

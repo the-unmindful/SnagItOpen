@@ -21,6 +21,10 @@ public sealed class AppServices : IDisposable
     {
         Paths = paths;
         Paths.EnsureCreated();
+        var clip = Path.Combine(paths.Cache, "clip");
+        if (Directory.Exists(clip))
+            foreach (var file in Directory.EnumerateFiles(clip, "*.png"))
+                Storage.AtomicFile.TryDelete(file);
         Assets = new FileAssetStore(paths.Assets);
         Assets.CleanupTemporaryFiles();
         Imaging = new ImagingDispatcher();
@@ -35,6 +39,11 @@ public sealed class AppServices : IDisposable
         var s = SettingsStore.Load();
         Settings = s.Value;
         if (s.Warning is not null) StartupWarnings.Add(s.Warning);
+
+        UiStateStore = new UiStateStore(paths.UiState);
+        IsFirstRun = UiStateStore.IsFirstRun;
+        var ui = UiStateStore.Load();
+        UiState = ui.Value; // a corrupt ui-state.json silently falls back to defaults (backup kept)
 
         LayoutPresets = new LayoutPresetStore(paths.Presets);
         LayoutPresets.Load();
@@ -73,6 +82,11 @@ public sealed class AppServices : IDisposable
     public ClipboardImageService Clipboard { get; }
     public SettingsStore SettingsStore { get; }
     public AppSettings Settings { get; set; }
+    public UiStateStore UiStateStore { get; }
+    /// <summary>Remembered layout and one-time flags; update with <see cref="SaveUiState"/>.</summary>
+    public UiState UiState { get; private set; }
+    /// <summary>True when ui-state.json did not exist at startup.</summary>
+    public bool IsFirstRun { get; }
     public LayoutPresetStore LayoutPresets { get; }
     public ToolStyleStore ToolStyles { get; }
     public AnnotationStyleStore AnnotationStyles { get; }
@@ -91,6 +105,14 @@ public sealed class AppServices : IDisposable
         Settings = settings.Sanitize();
         try { SettingsStore.Save(Settings); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { StartupWarnings.Add($"Settings could not be saved: {ex.Message}"); }
+    }
+
+    /// <summary>Replaces the UI state and writes ui-state.json (failures are logged, never thrown).</summary>
+    public void SaveUiState(UiState state)
+    {
+        UiState = state.Sanitize();
+        try { UiStateStore.Save(UiState); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Log("UI state could not be saved: " + ex.Message); }
     }
 
     public void Log(string message)

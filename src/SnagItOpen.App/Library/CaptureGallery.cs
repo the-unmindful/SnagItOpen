@@ -156,6 +156,8 @@ internal sealed class CaptureGallery : DockPanel
     private readonly TextBlock _empty;
     private readonly TextBlock _count;
     private readonly Dictionary<Guid, BitmapSource?> _thumbs = [];
+    private readonly Grid _body;
+    private readonly Button _collapse;
 
     public CaptureGallery(AppServices services, EditorViewModel vm, Action openLibrary)
     {
@@ -164,8 +166,14 @@ internal sealed class CaptureGallery : DockPanel
         Height = 132;
         LastChildFill = true;
 
-        var header = new DockPanel { Margin = new Thickness(6, 3, 6, 2) };
-        var manage = new Button { Content = "Manage…", Padding = new Thickness(8, 0, 8, 0), ToolTip = "Rename, pin or delete captures" };
+        SetResourceReference(BackgroundProperty, "Bg.SurfaceAlt");
+        var header = new DockPanel { Margin = new Thickness(6, 0, 6, 0), Height = 28 };
+        _collapse = new Button { Content = "▾", Padding = new Thickness(4, 0, 4, 0), MinHeight = 22, Margin = new Thickness(0, 0, 6, 0), ToolTip = "Collapse recent captures" };
+        AutomationProperties.SetName(_collapse, "Collapse recent captures");
+        _collapse.Click += (_, _) => SetCollapsed(!_services.UiState.CaptureGalleryCollapsed);
+        DockPanel.SetDock(_collapse, Dock.Left); header.Children.Add(_collapse);
+        var manage = new Button { Content = "Open library", Padding = new Thickness(8, 0, 8, 0), MinHeight = 22, ToolTip = "Open library (Ctrl+L)" };
+        AutomationProperties.SetName(manage, "Open capture library"); AutomationProperties.SetAcceleratorKey(manage, "Ctrl+L");
         manage.Click += (_, _) => openLibrary();
         DockPanel.SetDock(manage, Dock.Right);
         _count = new TextBlock { Margin = new Thickness(0, 0, 8, 0), Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center };
@@ -174,13 +182,14 @@ internal sealed class CaptureGallery : DockPanel
         header.Children.Add(_count);
         header.Children.Add(new TextBlock
         {
-            Text = "Recent captures: drag onto the canvas, or double-click to add. Ctrl+click to pick several.",
+            Text = "Recent captures",
             VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
         });
         SetDock(header, Dock.Top);
         Children.Add(header);
 
-        _list = new ListBox { SelectionMode = SelectionMode.Extended, BorderThickness = new Thickness(0), Background = Brushes.Transparent };
+        _list = new ListBox { SelectionMode = SelectionMode.Extended, BorderThickness = new Thickness(0) };
+        _list.SetResourceReference(Control.BackgroundProperty, "Bg.Surface");
         AutomationProperties.SetName(_list, "Recent captures");
         ScrollViewer.SetVerticalScrollBarVisibility(_list, ScrollBarVisibility.Disabled);
         ScrollViewer.SetHorizontalScrollBarVisibility(_list, ScrollBarVisibility.Auto);
@@ -189,7 +198,8 @@ internal sealed class CaptureGallery : DockPanel
         panel.SetValue(VirtualizingStackPanel.OrientationProperty, Orientation.Horizontal);
         _list.ItemsPanel = new ItemsPanelTemplate(panel);
         _list.ItemTemplate = BuildTemplate();
-        var itemStyle = new Style(typeof(ListBoxItem));
+        var itemStyle = new Style(typeof(ListBoxItem), TryFindResource(typeof(ListBoxItem)) as Style);
+        itemStyle.Setters.Add(new Setter(FocusVisualStyleProperty, TryFindResource("FocusRing")));
         itemStyle.Setters.Add(new Setter(AutomationProperties.NameProperty, new Binding(nameof(Item.AccessibleName))));
         itemStyle.Setters.Add(new Setter(ToolTipProperty, new Binding(nameof(Item.Tip))));
         _list.ItemContainerStyle = itemStyle;
@@ -197,17 +207,24 @@ internal sealed class CaptureGallery : DockPanel
         _list.KeyDown += (_, e) => { if (e.Key == Key.Enter) { AddSelected(); e.Handled = true; } };
         _list.PreviewMouseWheel += OnWheel;
         _ = new CaptureListDrag(_list, services, o => (o as Item)?.Entry);
+        _list.ContextMenu = BuildContextMenu();
+        _list.PreviewMouseRightButtonDown += (_, e) =>
+        {
+            if (e.OriginalSource is Visual v && ItemsControl.ContainerFromElement(_list, v) is ListBoxItem item && !item.IsSelected)
+            { _list.SelectedItems.Clear(); item.IsSelected = true; item.Focus(); }
+        };
 
         _empty = new TextBlock
         {
-            Text = "No captures yet. Captures appear here automatically (Capture > Region, or Ctrl+Shift+1).",
+            Text = "No captures yet. Capture a region to add it here.",
             Opacity = 0.65, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 0, 12, 0),
         };
-        var body = new Grid();
-        body.Children.Add(_list);
-        body.Children.Add(_empty);
-        Children.Add(body);
+        _body = new Grid();
+        _body.Children.Add(_list);
+        _body.Children.Add(_empty);
+        Children.Add(_body);
+        SetCollapsed(services.UiState.CaptureGalleryCollapsed, persist: false);
 
         Loaded += (_, _) => { _services.History.Changed += OnHistoryChanged; Refresh(); };
         Unloaded += (_, _) => _services.History.Changed -= OnHistoryChanged;
@@ -220,8 +237,8 @@ internal sealed class CaptureGallery : DockPanel
         var border = new FrameworkElementFactory(typeof(Border));
         border.SetValue(Border.WidthProperty, 112.0);
         border.SetValue(Border.HeightProperty, 70.0);
-        border.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0xF4, 0xF4, 0xF4)));
-        border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromArgb(0x40, 0, 0, 0)));
+        border.SetResourceReference(Border.BackgroundProperty, "Checker.B");
+        border.SetResourceReference(Border.BorderBrushProperty, "Stroke.Divider");
         border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
         var img = new FrameworkElementFactory(typeof(Image));
         img.SetBinding(Image.SourceProperty, new Binding(nameof(Item.Thumb)));
@@ -232,12 +249,40 @@ internal sealed class CaptureGallery : DockPanel
         size.SetBinding(TextBlock.TextProperty, new Binding(nameof(Item.Size)));
         size.SetValue(TextBlock.FontSizeProperty, 11.0);
         size.SetValue(OpacityProperty, 0.7);
+        size.SetResourceReference(TextBlock.ForegroundProperty, "Text.Secondary");
         size.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center);
         root.AppendChild(size);
         return new DataTemplate { VisualTree = root };
     }
 
     private void OnHistoryChanged() => Dispatcher.BeginInvoke(Refresh);
+
+    private void SetCollapsed(bool collapsed, bool persist = true)
+    {
+        if (persist) _services.SaveUiState(_services.UiState with { CaptureGalleryCollapsed = collapsed });
+        Height = collapsed ? 28 : 132;
+        _body.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        _collapse.Content = collapsed ? "▸" : "▾";
+        AutomationProperties.SetName(_collapse, collapsed ? "Expand recent captures" : "Collapse recent captures");
+    }
+
+    private ContextMenu BuildContextMenu()
+    {
+        var menu = new ContextMenu();
+        void Add(string label, Action<Window> action)
+        {
+            var item = new MenuItem { Header = label };
+            item.Click += (_, _) => { if (Window.GetWindow(this) is { } owner) action(owner); };
+            menu.Items.Add(item);
+        }
+        IReadOnlyList<CaptureEntry> Selected() => _list.SelectedItems.Cast<Item>().Select(i => i.Entry).ToList();
+        Add("Add to composition", _ => AddSelected());
+        Add("Open as new", owner => LibraryActions.OpenNew(owner, _services, _vm, Selected()));
+        Add("Copy", owner => _ = LibraryActions.CopyAsync(owner, _services, Selected().FirstOrDefault()));
+        Add("Pin to screen", owner => LibraryActions.Pin(owner, _services, _vm, Selected().FirstOrDefault()));
+        Add("Delete", owner => LibraryActions.Delete(owner, _services, _vm, Selected()));
+        return menu;
+    }
 
     public void Refresh()
     {

@@ -17,6 +17,7 @@
     <SolidColorBrush x:Key="Text.Secondary" Color="{x:Static SystemColors.WindowTextColor}" />
     <SolidColorBrush x:Key="Text.Disabled" Color="{x:Static SystemColors.GrayTextColor}" />
     <SolidColorBrush x:Key="Text.OnAccent" Color="{x:Static SystemColors.HighlightTextColor}" />
+    <SolidColorBrush x:Key="Text.Selected" Color="{x:Static SystemColors.HighlightTextColor}" />
     <SolidColorBrush x:Key="Accent.Brand" Color="{x:Static SystemColors.HighlightColor}" />
     <SolidColorBrush x:Key="Accent.BrandHover" Color="{x:Static SystemColors.HotTrackColor}" />
     <SolidColorBrush x:Key="Accent.Select" Color="{x:Static SystemColors.HighlightColor}" />
