@@ -174,6 +174,40 @@ public sealed class ShellIntegrationTests
     }
 
     [Fact]
+    public void Content_state_renders_with_annotation_inspector_for_review()
+    {
+        WithWindow((window, vm) =>
+        {
+            var label = SnagItOpen.Imaging.Rendering.AnnotationRenderer.Fit(new TextAnnotation
+            {
+                Text = "New feature", FontSize = 28, Color = Rgba32.White, Fill = new Rgba32(200, 30, 38, 255), Bold = true, StrokeWidth = 0,
+                PaddingX = 12, PaddingY = 6, CornerRadius = 6, Sizing = TextSizing.AutoWidth, VerticalAlign = TextVAlign.Middle, Bounds = new RectD(60, 40, 10, 10),
+            });
+            var box = new RectangleAnnotation { Bounds = new RectD(40, 120, 360, 200), Color = Rgba32.Red, StrokeWidth = 4 };
+            var step = new StepAnnotation { Number = 1, Bounds = new RectD(420, 100, 36, 36) };
+            var arrow = new ArrowAnnotation { Start = new(470, 380), End = new(300, 240), Bounds = RectD.FromPoints(new(300, 240), new(470, 380)), Color = Rgba32.Red, StrokeWidth = 6 };
+            foreach (var a in new Annotation[] { label, box, step, arrow }) vm.AddAnnotation(a);
+            Assert.Equal(4, vm.Document.Annotations.Count());
+            Assert.Equal(arrow.Id, vm.PrimaryAnnotation?.Id);
+            string? output = Environment.GetEnvironmentVariable("SNAGITOPEN_EVIDENCE");
+            foreach (var theme in new[] { "Light", "Dark" })
+            {
+                using var stream = File.OpenRead(Path.Combine(ThemeTokenTests.ThemesFolder(), "Tokens." + theme + ".xaml"));
+                window.Resources.MergedDictionaries.Clear(); window.Resources.MergedDictionaries.Add((ResourceDictionary)System.Windows.Markup.XamlReader.Load(stream));
+                window.Width = 1280; window.Measure(new Size(1280, 820)); window.Arrange(new Rect(0, 0, 1280, 820)); window.UpdateLayout();
+                var canvas = Assert.IsType<CanvasView>(window.FindName("Canvas"));
+                typeof(CanvasView).GetMethod("OnThemeChanged", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!.Invoke(canvas, [null, EventArgs.Empty]);
+                canvas.UpdateLayout();
+                if (string.IsNullOrWhiteSpace(output)) continue;
+                Directory.CreateDirectory(output);
+                var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(window); var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
+                using var file = File.Create(Path.Combine(output, $"content-{theme}-1280.png")); png.Save(file);
+            }
+        });
+    }
+
+    [Fact]
     public void Button_icons_are_never_clipped_by_padding_at_any_width()
     {
         WithWindow((window, _) =>

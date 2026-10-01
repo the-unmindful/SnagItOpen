@@ -24,7 +24,7 @@ public sealed class SegmentedControl : UserControl
     public void Add(object value, string label, Geometry? icon = null)
     {
         var option = new SegmentOption(value, label, icon);
-        var button = new ToggleButton { MinHeight = 28, MinWidth = 28, Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(0, 0, 2, 0) };
+        var button = new ToggleButton { MinHeight = 28, MinWidth = 28, Padding = new Thickness(icon is not null || label.Length <= 2 ? 5 : 7, 4, icon is not null || label.Length <= 2 ? 5 : 7, 4), Margin = new Thickness(0, 0, 2, 0) };
         button.Content = ControlVisuals.IconLabel(icon, label, icon is null, button); ControlVisuals.Describe(button, label, "");
         button.Click += (_, _) => Select(value);
         button.PreviewKeyDown += (_, e) =>

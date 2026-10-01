@@ -22,7 +22,8 @@ Batch 1, done on 2026-10-01:
   - V05: both parts share one style, with a 1 px gap.
   - V14: menu radius 8, 28 px items and a drawn checkmark. Shortcut column and separators were not reviewed.
 - **Decided:** V22 is kept as is. The tip appears only on first run and carries the tray information, which the start card lacks.
-- **Remaining:**
+- **Batch 2 (2026-10-01): V15, V18, V23 and V24 done.** V24 added the `Content_state_renders_with_annotation_inspector_for_review` test, with renders saved as `docs/evidence/polish-*.png`. The review found and fixed blank style thumbnails (DPI applied twice; new test `High_dpi_thumbnails_keep_the_sample_centred_in_the_tile`) and arrow-cap segments overflowing the inspector (tighter short segments).
+- **Formerly remaining (now done):**
   - V15: layout-mode SegmentedControl, and a Properties icon instead of the gear.
   - V18: Alignment and Auto/Locked as segmented controls, compact background row.
   - V23: rail overflow cue.

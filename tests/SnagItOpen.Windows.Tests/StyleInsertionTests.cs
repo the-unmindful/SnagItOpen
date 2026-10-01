@@ -10,6 +10,21 @@ namespace SnagItOpen.Windows.Tests;
 public class StyleInsertionTests
 {
     [Fact]
+    public void High_dpi_thumbnails_keep_the_sample_centred_in_the_tile()
+    {
+        ThemeTokenTests.RunSta<bool>(() =>
+        {
+            var bitmap = new StyleThumbnailRenderer().Render(BuiltInStyles.For("Arrow")[0].Style, SnagItOpen.App.Infrastructure.EffectiveTheme.Light, 2);
+            int w = bitmap.PixelWidth, h = bitmap.PixelHeight; var px = new byte[w * h * 4]; bitmap.CopyPixels(px, w * 4, 0);
+            var red = Enumerable.Range(0, w * h).Where(i => px[i * 4 + 2] > 160 && px[i * 4 + 1] < 100).Select(i => (X: i % w, Y: i / w)).ToList();
+            Assert.NotEmpty(red);
+            double cx = red.Average(p => p.X) / w, cy = red.Average(p => p.Y) / h;
+            Assert.InRange(cx, 0.3, 0.7); Assert.InRange(cy, 0.3, 0.7); // was drawn off-tile when DPI scaling was applied twice
+            return true;
+        });
+    }
+
+    [Fact]
     public void Every_built_in_style_inserts_near_the_point_and_keeps_its_look()
     {
         ThemeTokenTests.RunSta<bool>(() =>

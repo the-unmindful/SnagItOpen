@@ -27,7 +27,6 @@ public sealed class StyleThumbnailRenderer
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
-            dc.PushTransform(new ScaleTransform(scale, scale));
             var first = new SolidColorBrush(a); first.Freeze(); var second = new SolidColorBrush(b); second.Freeze();
             dc.DrawRectangle(first, null, new Rect(0, 0, TileWidth, TileHeight));
             for (int y = 0; y < TileHeight; y += 5) for (int x = 0; x < TileWidth; x += 5) if ((x / 5 + y / 5) % 2 != 0) dc.DrawRectangle(second, null, new Rect(x, y, 5, 5));
@@ -36,7 +35,7 @@ public sealed class StyleThumbnailRenderer
             double factor = Math.Min(1.0, Math.Min((TileWidth - 10) / Math.Max(1, extent.Width), (TileHeight - 10) / Math.Max(1, extent.Height)));
             dc.PushTransform(new TranslateTransform((TileWidth - extent.Width * factor) / 2 - extent.X * factor, (TileHeight - extent.Height * factor) / 2 - extent.Y * factor));
             dc.PushTransform(new ScaleTransform(factor, factor));
-            AnnotationRenderer.Draw(dc, sample); dc.Pop(); dc.Pop(); dc.Pop();
+            AnnotationRenderer.Draw(dc, sample); dc.Pop(); dc.Pop(); // the bitmap DPI applies the monitor scale
         }
         int pw = (int)Math.Ceiling(TileWidth * scale), ph = (int)Math.Ceiling(TileHeight * scale);
         var bitmap = new RenderTargetBitmap(pw, ph, 96 * scale, 96 * scale, PixelFormats.Pbgra32); bitmap.Render(visual); bitmap.Freeze(); RenderCount++;
