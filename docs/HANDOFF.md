@@ -18,7 +18,7 @@ A local, offline Windows screenshot capture and image editor, similar to Snagit.
   dotnet test .\tests\SnagItOpen.Windows.Tests\SnagItOpen.Windows.Tests.csproj -c Debug --no-build
   .\scripts\publish.ps1          # Release build + both suites + package in artifacts\
   ```
-  Expected at hand-off: **0 warnings, 0 errors, 211 Core + 230 Windows = 441 tests passing.** Final exact commands and release evidence are in `docs/evidence/verification.md`.
+  Expected at hand-off: **0 warnings, 0 errors, 217 Core + 237 Windows = 454 tests passing.** Final exact commands and release evidence are in `docs/evidence/verification.md`.
 - **Before building, stop only your own smoke process if it locks the output.** Verify its PID and executable path under this repo's `bin\` or `artifacts\`. Do not terminate the user's installed app or all processes with the same name.
 - **Smoke runs must use a temp data folder:** set `$env:SNAGITOPEN_DATA` to a folder under `E:\Misc\test\opencode-trial\temp\opencode`, so real user data is never touched.
 - **Don't run a build/test in the same parallel batch as the file edit it should check.** It can run before the edit lands and report a stale pass. This happened several times in the first session.
@@ -85,7 +85,10 @@ Done (all committed; see `git log --oneline`):
 - App icon: red rounded square with a white "S" (`src/SnagItOpen.App/Assets/SnagItOpen.ico`, 8 sizes 16–256). Regenerate with `.\scripts\make-icon.ps1`. Set as `<ApplicationIcon>`, so exe, taskbar, windows, shortcuts and tray all use it. The tray loads the frame at `SmallIconSize`, so it stays sharp at high DPI.
 - Empty-canvas start card (`MainWindow.xaml`, inside the canvas `Grid`): replaces the old drawn text that the buttons overlapped. Shows Capture region / Import / Paste buttons and a shortcuts list; the global hotkey labels come from the registered bindings (`UpdateStartCardKeys`). It is bound to `IsEmpty`, so it disappears as soon as anything is added. `CanvasView` now draws text only when content exists but is all hidden.
 
-**Parallel work (from 2026-10-01):** Claude works in this folder on `ui-upgrade`. A worker works in the git worktree `..\SnagItOpen-worker` on branch `polish-worker`. Task ownership and file ownership are in the "Ownership" table of `docs/superpowers/plans/2026-10-01-ui-polish-rectification.md`. Part 2 there holds the F-tasks: text boxes, magnifier, style gallery, grouping and scrolling capture. Release package rebuilt 2026-10-01 14:35 with batch 1: `artifacts/SnagItOpen-0.2.0-win-x64.zip`.
+**Polish and editing-quality round (2026-10-01): all tasks done by Claude; the worker plan was cancelled and its worktree removed.** Plan and per-task status: `docs/superpowers/plans/2026-10-01-ui-polish-rectification.md` (V01–V24, F-TXT, F-MAG, F-STY, F-SCR, F-GRP). Release package rebuilt after the last commit: `artifacts/SnagItOpen-0.2.0-win-x64.zip` (SHA-256 96d70090…). Review renders: `docs/evidence/polish-*.png`.
+- New decisions: grouping is annotations-only (the user did not answer; this keeps §4). Magnifier: a move keeps its content (`Annotation.Translate`); the source is edited via its dashed outline. Text: old files load as `Sizing=Fixed`/`VerticalAlign=Top`, so they render unchanged. Scrolling capture: one stitched image through the normal capture destination.
+- To check by hand (never seen live, because the user's Debug app held the build lock all session): text typing/auto-grow and centring; lens source drag; gallery double-click/drag insert; Ctrl+G group then click-again drill-in; scrolling capture on a real page with a sticky header; the status-bar canvas-size button (the headless render showed it clipped, "6 × 364" for 456 × 364 px).
+- Not done (ideas): group resize handles and an Objects-list group row; auto-fit the view when the first content arrives in an empty document.
 
 ### Requests between agents
 (Append a dated line when you need a change in a file you don't own. The owner answers here and removes the line when it's done.)

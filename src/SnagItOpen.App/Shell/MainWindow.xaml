@@ -145,6 +145,7 @@
                     <ui:IconButton Label="Show or hide the selected image" ShowLabel="False" Icon="{DynamicResource Icon.Eye}" Click="OnToggleHidden" />
                     <ui:IconButton Label="Remove the selected images" Shortcut="Del" ShowLabel="False" Icon="{DynamicResource Icon.Trash}" Click="OnDelete" />
                 </StackPanel>
+                <Grid>
                 <ListBox x:Name="ImageList" ItemsSource="{Binding Images}" SelectionMode="Extended" AllowDrop="True"
                          HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          AutomationProperties.Name="Images in combine order"
@@ -176,6 +177,11 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+                <!-- Empty state: say what belongs here and where annotations are listed. -->
+                <TextBlock Text="Images you capture, import or paste appear here in combine order. Annotations are listed under Objects." TextWrapping="Wrap" TextAlignment="Center" Margin="16,24" FontSize="11" VerticalAlignment="Top" IsHitTestVisible="False" Foreground="{DynamicResource Text.Secondary}">
+                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=ImageList}" Value="False"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                </TextBlock>
+                </Grid>
             </DockPanel>
             </TabItem>
             <TabItem Header="Objects">
