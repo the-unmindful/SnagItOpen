@@ -180,9 +180,14 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
     private IntPtr _target;
     private bool _busy, _finished;
 
-    public ScrollingCaptureWindow(AppServices services, CaptureCoordinator coordinator, EditorViewModel vm, Window owner)
+    private readonly System.Windows.Threading.DispatcherTimer _previewTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
+
+    public ScrollingCaptureWindow(AppServices services, CaptureCoordinator coordinator, EditorViewModel vm, Window owner, CaptureDestination? destination = null)
         : base(services, coordinator, vm, owner, "Scrolling capture")
     {
+        if (destination is { } preset) _lastDestination = preset == CaptureDestination.AppendRight ? CaptureDestination.AppendBelow : preset;
+        // Auto scroll adds frames off the UI thread: refresh the preview at most every 600 ms while it runs.
+        _previewTimer.Tick += (_, _) => { _previewTimer.Stop(); UpdatePreview(); };
         var margins = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         margins.Children.Add(new TextBlock { Text = "Ignore fixed rows: top", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
         margins.Children.Add(_header);
@@ -238,6 +243,7 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
         {
             Overlap = new Core.Stitching.OverlapOptions { HeaderRows = header, FooterRows = footer },
         });
+        _session.Changed += () => Dispatcher.BeginInvoke(() => { if (!_previewTimer.IsEnabled) _previewTimer.Start(); });
     }
 
     private void UpdateButtons()
@@ -258,7 +264,10 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
             if ((int)_header.Value != s.HeaderRows) _header.Value = s.HeaderRows; // show detected sticky bands
             if ((int)_footer.Value != s.FooterRows) _footer.Value = s.FooterRows;
             _preview.Source = ScrollComposer.Compose(s.Frames.Select(f => (f.Frame, f.Overlap)).ToList(), s.HeaderRows, s.FooterRows).ToBitmap();
+            bool appeared = _preview.Visibility != Visibility.Visible;
             _preview.Visibility = Visibility.Visible;
+            // The panel grows when the preview first appears: place it again so no control ends up off-screen.
+            if (appeared) Dispatcher.BeginInvoke(ShowBesideRegion, System.Windows.Threading.DispatcherPriority.Loaded);
         }
         catch (Exception ex) when (ex is ArgumentException or OutOfMemoryException or OverflowException) { _preview.Visibility = Visibility.Collapsed; }
     }
@@ -348,6 +357,7 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
                 (t, c) => Task.Delay(t, c),
                 () => DateTimeOffset.Now,
                 _autoCts.Token);
+            _previewTimer.Stop(); UpdatePreview();
             if (reason == ScrollStopReason.LowConfidence) ResolvePending();
             else SetStatus(reason switch
             {
@@ -417,8 +427,15 @@ internal sealed class ScrollingCaptureWindow : SessionPanel
                     return;
                 }
             }
-            await Vm.AddCapturesAsync([new CaptureItem(stitched, Region)], dest);
-            Vm.Status = $"Scrolling capture added: {s.Frames.Count} frame(s) stitched into one {stitched.Width} × {stitched.Height} px image.";
+            bool delivered = await Vm.AddCapturesAsync([new CaptureItem(stitched, Region)], dest) || (dest == CaptureDestination.CopyOnly && Vm.LastCaptureSucceeded);
+            if (!delivered)
+            {
+                // Keep the session (and its frames) so nothing is lost; the status line says why.
+                _finished = false; _busy = false; UpdateButtons();
+                SetStatus($"Could not add the result ({Vm.Status}). Try another Result, or Finish again. {Progress()}");
+                return;
+            }
+            if (dest != CaptureDestination.CopyOnly) Vm.Status = $"Scrolling capture added: {s.Frames.Count} frame(s) stitched into one {stitched.Width} × {stitched.Height} px image.";
             Close();
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)

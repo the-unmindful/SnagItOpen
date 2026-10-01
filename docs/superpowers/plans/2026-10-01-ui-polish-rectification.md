@@ -178,3 +178,19 @@ Problem today: `ScrollingCaptureWindow.FinishAsync` (`App/Capture/SessionWindows
 - Limits raised: 80 frames, 3 min (pixel and height caps unchanged).
 - The seam dialog in scrolling is titled "Line up the next frame", with an "Add frame" button and a plain explanation.
 - Not done: trimming the scrollbar column; horizontal scrolling; finishing automatically at the end of the page.
+
+## External review fixes (2026-10-02)
+- **Group 1, `e627e3e`:** the 13 failing review tests now pass (Enter on Cancel, inspector values, style double-click, rotated text centre, scroll step and seam preview with sticky bands).
+- **Group 2 (user approved afterwards):** one clipboard setting (`CopyCaptureToClipboard`; the older duplicate `CopyAfterCapture`, off by default and copying the whole canvas, was removed). Presets keep their own copy option, so the global setting is skipped for preset captures. Scrolling and interval presets run their session, with the preset destination. One capture at a time (`CaptureSessionActive`). Scrolling Finish keeps the session if delivery fails. Live preview during Auto scroll, and the panel is re-placed when the preview appears.
+- **Group 3, deferred (see `docs/review-2026-10-02-*.md`):**
+  - Pins can't reopen after their asset is deleted.
+  - High Contrast hover legibility.
+  - Inspector Reset targets the tool, not the selection.
+  - Two Zoom controls in the magnifier defaults.
+  - Recent-project name collisions in the command registry.
+  - Scrolling memory with many overlapping 4K frames.
+  - Cancelling a mixed scrub, and stale drill-in state.
+  - Paste Style does not refit text.
+  - Padding fields lack finite-value validation.
+  - Drawing overrides the saved vertical-align default.
+  - PRD gaps: Classic toolbar toggle missing from Settings (it is in the View menu); the Windows accent choice is ineffective (U39 excluded).

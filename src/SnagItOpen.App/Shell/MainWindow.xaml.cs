@@ -1231,7 +1231,7 @@ public partial class MainWindow : Window
     /// <summary>Captures first, then routes the result after every overlay has closed.</summary>
     public async Task RunCaptureAsync(CaptureMode mode, CaptureOptions? options = null, CapturePreset? preset = null, bool? pickerAspect = null)
     {
-        if (_capture.IsBusy) return;
+        if (CaptureSessionActive) return;
         Canvas.CancelGesture();
         bool hidden = !IsVisible;
         var o = options ?? BaseOptions();
@@ -1257,12 +1257,11 @@ public partial class MainWindow : Window
             try { await _vm.StoreCapturesAsync(outcome.Items); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { ShowErrorToast(ex.Message); return; }
         }
-        else added = await _vm.AddCapturesAsync(outcome.Items, destination, destination != CaptureDestination.AppendRight);
+        else added = await _vm.AddCapturesAsync(outcome.Items, destination, destination != CaptureDestination.AppendRight, autoCopy: preset is null);
         if (!outputOnly && !_vm.LastCaptureSucceeded) return;
         if (action == CaptureOverlayAction.Save) outputPath = await SaveCapturedImageAsync(outcome.Items[0]);
         else if (action == CaptureOverlayAction.Pin) PinCapture(outcome.Items[0]);
-        if (preset is not null) outputPath = await QuickOutputAsync(preset, outcome.Items);
-        else if (added && S.CopyAfterCapture) await _vm.CopyImageAsync();
+        if (preset is not null) outputPath = await QuickOutputAsync(preset, outcome.Items); // presets decide copying themselves
         if (added) { ShowEditor(); FitSoon(); }
         else if ((action == CaptureOverlayAction.Drag || S.DesktopToasts && hidden) && _vm.StatusKind != NotificationKind.Error && !(action == CaptureOverlayAction.Save && outputPath is null))
         {
@@ -1342,7 +1341,9 @@ public partial class MainWindow : Window
             DelaySeconds = p.DelaySeconds, IncludeCursor = p.IncludeCursor, Destination = p.Destination, Shape = p.Shape,
             Constraint = new SelectionConstraint { FixedSize = p.FixedSize, AspectRatio = p.AspectRatio },
         };
-        if (p.Mode == CaptureMode.Scrolling) { OnScrolling(this, new RoutedEventArgs()); return Task.CompletedTask; }
+        // Session modes have their own windows; pass the preset's destination instead of falling through to a region capture.
+        if (p.Mode == CaptureMode.Scrolling) { StartScrolling(p.Destination); return Task.CompletedTask; }
+        if (p.Mode == CaptureMode.Interval) { StartInterval(p.Destination); return Task.CompletedTask; }
         return RunCaptureAsync(p.Mode, o, p);
     }
 
@@ -1360,16 +1361,21 @@ public partial class MainWindow : Window
         edit.Click += (_, _) => OpenSettingsPage("Capture"); CapturePresetsMenu.Items.Add(edit);
     }
 
-    private void OnScrolling(object sender, RoutedEventArgs e)
+    /// <summary>One capture at a time: ordinary captures, scrolling and interval sessions never overlap.</summary>
+    private bool CaptureSessionActive => _capture.IsBusy || ScrollingCaptureWindow.IsOpen || IntervalCaptureWindow.IsOpen;
+
+    private void OnScrolling(object sender, RoutedEventArgs e) => StartScrolling(null);
+    private void StartScrolling(CaptureDestination? destination)
     {
-        if (_capture.IsBusy || ScrollingCaptureWindow.IsOpen) return;
-        new ScrollingCaptureWindow(_services, _capture, _vm, this).Start();
+        if (CaptureSessionActive) return;
+        new ScrollingCaptureWindow(_services, _capture, _vm, this, destination).Start();
     }
 
-    private void OnInterval(object sender, RoutedEventArgs e)
+    private void OnInterval(object sender, RoutedEventArgs e) => StartInterval(null);
+    private void StartInterval(CaptureDestination? destination)
     {
-        if (_capture.IsBusy || IntervalCaptureWindow.IsOpen) return;
-        var request = IntervalDialog.Show(this, S.DefaultDestination);
+        if (CaptureSessionActive) return;
+        var request = IntervalDialog.Show(this, destination ?? S.DefaultDestination);
         if (request is null) return;
         new IntervalCaptureWindow(_services, _capture, _vm, this, TimeSpan.FromSeconds(request.Seconds), request.Frames, request.Destination).Start();
     }

@@ -55,7 +55,6 @@ public sealed record AppSettings
     /// <summary>Start SnagItOpen hidden in the tray when you sign in to Windows.</summary>
     public bool StartWithWindows { get; init; }
     public bool ShowTrayIcon { get; init; } = true;
-    public bool CopyAfterCapture { get; init; }
     public bool SnapEnabled { get; init; } = true;
     public OutsideCanvasMode OutsideCanvas { get; init; } = OutsideCanvasMode.Dim;
     public int JpegQuality { get; init; } = 90;

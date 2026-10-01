@@ -809,10 +809,11 @@ public sealed class EditorViewModel : ObservableObject
     /// Adds captured images per destination as one undoable step. Returns false when nothing was added.
     /// </summary>
     /// <summary>Delivers captures to <paramref name="destination"/>, then (if enabled in settings) copies the latest one to the clipboard.</summary>
-    public async Task<bool> AddCapturesAsync(IReadOnlyList<CaptureItem> items, CaptureDestination destination, bool combineVertical = true)
+    /// <param name="autoCopy">False when the caller handles copying itself (capture presets have their own option).</param>
+    public async Task<bool> AddCapturesAsync(IReadOnlyList<CaptureItem> items, CaptureDestination destination, bool combineVertical = true, bool autoCopy = true)
     {
         bool added = await AddCapturesCoreAsync(items, destination, combineVertical);
-        if (added && destination != CaptureDestination.CopyOnly && _services.Settings.CopyCaptureToClipboard && items.Count > 0)
+        if (added && autoCopy && destination != CaptureDestination.CopyOnly && _services.Settings.CopyCaptureToClipboard && items.Count > 0)
         {
             var status = Status;
             try

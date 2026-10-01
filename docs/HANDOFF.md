@@ -18,7 +18,7 @@ A local, offline Windows screenshot capture and image editor, similar to Snagit.
   dotnet test .\tests\SnagItOpen.Windows.Tests\SnagItOpen.Windows.Tests.csproj -c Debug --no-build
   .\scripts\publish.ps1          # Release build + both suites + package in artifacts\
   ```
-  Expected at hand-off: **0 warnings, 0 errors, 220 Core + 237 Windows = 457 tests passing.** Final exact commands and release evidence are in `docs/evidence/verification.md`.
+  Expected at hand-off: **0 warnings, 0 errors, 221 Core + 251 Windows = 472 tests passing.** Final exact commands and release evidence are in `docs/evidence/verification.md`.
 - **Before building, stop only your own smoke process if it locks the output.** Verify its PID and executable path under this repo's `bin\` or `artifacts\`. Do not terminate the user's installed app or all processes with the same name.
 - **Smoke runs must use a temp data folder:** set `$env:SNAGITOPEN_DATA` to a folder under `E:\Misc\test\opencode-trial\temp\opencode`, so real user data is never touched.
 - **Don't run a build/test in the same parallel batch as the file edit it should check.** It can run before the edit lands and report a stale pass. This happened several times in the first session.
