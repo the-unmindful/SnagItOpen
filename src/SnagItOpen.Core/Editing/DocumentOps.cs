@@ -86,6 +86,26 @@ public static class DocumentOps
         return Reflow(doc with { Assets = assets.ToArray(), Images = images.ToArray(), LayoutOrder = order.ToArray() });
     }
 
+    /// <summary>
+    /// Free-layout capture placement that never moves existing images: below (or right of) <paramref name="anchor"/>,
+    /// else below (right of) all images. Several captures are chained so they do not overlap.
+    /// </summary>
+    public static IReadOnlyList<ImageLayer> PlaceAppended(DocumentState doc, IReadOnlyList<ImageAsset> assets, bool right, PixelRect? anchor = null, int gap = 16)
+    {
+        PixelRect? reference = anchor;
+        if (reference is null && doc.Images.Length > 0)
+            reference = doc.Images.Select(i => i.Bounds).Aggregate((a, b) => a.Union(b));
+        var layers = new List<ImageLayer>();
+        foreach (var asset in assets)
+        {
+            int x = reference is { } r ? (right ? r.Right + gap : r.X) : doc.ExportArea.X;
+            int y = reference is { } q ? (right ? q.Y : q.Bottom + gap) : doc.ExportArea.Y;
+            var layer = ImageLayer.ForAsset(asset, x, y, "Capture");
+            layers.Add(layer); reference = layer.Bounds;
+        }
+        return layers;
+    }
+
     /// <summary>Places a new image in Free mode next to <paramref name="anchor"/> or at a point.</summary>
     public static ImageLayer PlaceLayer(ImageAsset asset, PixelPoint topLeft, string? name = null) =>
         ImageLayer.ForAsset(asset, topLeft.X, topLeft.Y, name);

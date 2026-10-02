@@ -868,6 +868,13 @@ public sealed class EditorViewModel : ObservableObject
 
             var ok = Commit(items.Count == 1 ? "Capture" : $"Capture {items.Count} images", d =>
             {
+                // Free layout is a hand-made arrangement: a capture must never switch the mode (that re-stacked every
+                // image) or move anything. Append below/right places the new image next to the work instead.
+                if (d.Layout.Mode == LayoutMode.Free && destination is CaptureDestination.AppendBelow or CaptureDestination.AppendRight)
+                {
+                    var placed = DocumentOps.PlaceAppended(d, assets, destination == CaptureDestination.AppendRight, SelectedLayer?.Bounds, Math.Max(16, d.Layout.Gap));
+                    return DocumentOps.AddImages(d, assets.Zip(placed, (a, l) => (a, l)).ToList());
+                }
                 var doc = destination switch
                 {
                     CaptureDestination.AppendBelow when d.Layout.Mode != LayoutMode.Vertical => DocumentOps.SetMode(d, LayoutMode.Vertical),
